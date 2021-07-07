@@ -45,23 +45,23 @@ out-SAHA.txt:
 
 # LDA without batch-effect correction.
 out-SAHA-no-bec.txt:
-	python LDA-3-groups-SAHA-no-bec.py
+	$(DOCKER_RUN) python scripts/LDA-3-groups-SAHA-no-bec.py
 
 # Plot signature proportions with PMA.
 bargraph-topics-PMA.pdf: alivecells.tsv out-PMA.txt out-PMA-no-bec.txt
-	R -f plot-topics-PMA.R
+	$(DOCKER_RUN) R -f scripts/plot-topics-PMA.R
 
 # Plot signature proportions with SAHA.
 bargraph-topics-SAHA.pdf: alivecells.tsv out-SAHA.txt out-SAHA-no-bec.txt
-	R -f plot-topics-SAHA.R
+	$(DOCKER_RUN) R -f scripts/plot-topics-SAHA.R
 
 # Print genes in signatures for pathway analysis.
-SAHA-signature-weights.csv SAHA-signature-gene_ids.txt: gene_annotations.tsv alivecells.tsv wfreq-SAHA.txt
-	R -f make-word-signatures-SAHA.R
+SAHA-signature-weights.csv SAHA-signature-gene_ids.txt: data/gene_annotations.tsv alivecells.tsv wfreq-SAHA.txt
+	$(DOCKER_RUN) R -f scripts/make-word-signatures-SAHA.R
 
 # Print genes in signatures for pathway analysis.
-PMA-signature-weights.csv PMA-signature-gene_ids.txt: gene_annotations.tsv alivecells.tsv wfreq-PMA.txt
-	R -f make-word-signatures-PMA.R
+PMA-signature-weights.csv PMA-signature-gene_ids.txt: data/gene_annotations.tsv alivecells.tsv wfreq-PMA.txt
+	$(DOCKER_RUN) R -f scripts/make-word-signatures-PMA.R
 
 # Print genes in signature for pathway analysis.
 PMA-signature-1-GO.txt PMA-signature-2-GO.txt SAHA-signature-GO.txt barplot-GO-PMA-signature-1.pdf barplot-GO-PMA-signature-2.pdf barplot-GO-SAHA-signature.pdf: SAHA-signature-DAVID.txt PMA-signature-DAVID.txt
