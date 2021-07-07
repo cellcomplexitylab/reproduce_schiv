@@ -1,5 +1,5 @@
-data.table = read.delim("exprMatrix.tsv", row.names=1)
-labels = read.delim("sampleSheet.tsv")
+data.table = read.delim("data/exprMatrix.tsv", row.names=1)
+labels = read.delim("data/sampleSheet.tsv")
 labels$cell = gsub("-", ".", labels$cell)
 labels = labels[order(labels$cell),]
 

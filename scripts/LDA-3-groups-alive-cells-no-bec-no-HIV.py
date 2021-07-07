@@ -159,8 +159,8 @@ svi = pyro.infer.SVI(model, guide, scheduler,
 loss = 0.
 for step in range(7000):
    loss += svi.step(data)
-   if (step+1) % 100 == 0:
-      print("iter {}: loss = {:.2f}".format(step+1, loss / 1e9))
+   if (step+1) % 1000 == 0:
+      sys.stderr.write("iter {}: loss = {:.2f}\n".format(step+1, loss / 1e9))
       loss = 0.
    if (step+1) % 6000 == 0:
       scheduler.step()
