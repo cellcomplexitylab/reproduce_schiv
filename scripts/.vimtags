@@ -1,0 +1,21 @@
+!_TAG_FILE_SORTED	2	/0=unsorted, 1=sorted, 2=foldcase/
+clip_args	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^      clip_args = {'clip_norm': 5.}$/;"	v	language:Python
+data	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^data = sc_data('alivecells.tsv')$/;"	v	language:Python
+G	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^G = X.shape[-1]$/;"	v	language:Python
+guide	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^def guide(data=None):$/;"	f	language:Python
+K	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^K = 3$/;"	v	language:Python
+loss	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^      loss = 0.$/;"	v	language:Python
+loss	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^      loss=pyro.infer.Trace_ELBO())$/;"	v	language:Python
+loss	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^loss = 0.$/;"	v	language:Python
+M	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^M = batches.max() + 1$/;"	v	language:Python
+model	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^def model(data=None):$/;"	f	language:Python
+N	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^N = ctypes.max() + 1$/;"	v	language:Python
+optimizer	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^optimizer = torch.optim.AdamW$/;"	v	language:Python
+optim_args	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^      optim_args = {'optimizer': optimizer, 'optim_args': {'lr': 0.01}, 'gamma': 0.1},$/;"	v	language:Python
+out	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^out = pyro.param("doc_topic_posterior")$/;"	v	language:Python
+previous_word_freqs_posterior	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^previous_word_freqs_posterior = None$/;"	v	language:Python
+scheduler	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^scheduler = pyro.optim.PyroLRScheduler($/;"	v	language:Python
+scheduler_constructor	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^      scheduler_constructor = torch.optim.lr_scheduler.ExponentialLR,$/;"	v	language:Python
+sc_data	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^def sc_data(fname, device='cpu'):$/;"	f	language:Python
+svi	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^svi = pyro.infer.SVI(model, guide, scheduler,$/;"	v	language:Python
+wfreq	/home/gfilion/projects/Darya-Repkina/single-cell-JLat/redo/scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py	/^wfreq = pyro.param("word_freqs_posterior")$/;"	v	language:Python
