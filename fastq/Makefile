@@ -490,11 +490,12 @@ gencode.v38.pc_transcripts.fa.gz:
 	wget http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_38/gencode.v38.pc_transcripts.fa.gz
 
 GRCh38.p13.genome.fa.gz:
-	http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_38/GRCh38.p13.genome.fa.gz
+	wget http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_38/GRCh38.p13.genome.fa.gz
 
 decoys.txt: GRCh38.p13.genome.fa.gz
 	grep "^>" <(gunzip -c GRCh38.p13.genome.fa.gz) | cut -d" " -f1 | sed "s/^>//" > decoys.txt
 
+# HIVmini.fa.gz from the notes of Guillaume Filion.
 gentrome.fa.gz: gencode.v38.pc_transcripts.fa.gz HIVmini.fa.gz GRCh38.p13.genome.fa.gz
 	cat gencode.v38.pc_transcripts.fa.gz HIVmini.fa.gz GRCh38.p13.genome.fa.gz > gentrome.fa.gz
 

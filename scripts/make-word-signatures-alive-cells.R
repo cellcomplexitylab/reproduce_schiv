@@ -25,11 +25,7 @@ write(head(PMA.pairs, 50), ncol=1, file="PMA-weights.csv")
 # Feed files to wordclouds.com
 # https://www.wordclouds.com/
 
-# Reload wfreq to use gene IDs.
-wfreq = as.matrix(read.table("wfreq-alive-no-bec-no-HIV.txt"))
-wfreq[is.na(wfreq)] = 0
-wfreq = wfreq[c(3,2,1),] # SAHA, DMSO, PMA
-
+# Change column names.
 colnames(wfreq) = colnames(cells)[-c(1,ncol(cells))]
 
 SAHA = sort(wfreq[1,] - colMeans(wfreq[-1,]), decreasing=TRUE)

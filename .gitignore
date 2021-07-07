@@ -1,7 +1,10 @@
+out-alive-no-bec-no-HIV.txt
+PMA-gene_ids.txt
+PMA-GO.txt
+SAHA-gene_ids.txt
+SAHA-GO.txt
+wfreq-alive-no-bec-no-HIV.txt
 *.csv
 *.pdf
 *.tsv
-PMA-gene_ids.txt
-SAHA-gene_ids.txt
-out-alive-no-bec-no-HIV.txt
-wfreq-alive-no-bec-no-HIV.txt
+*.vimtags
