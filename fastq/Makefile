@@ -1,6 +1,6 @@
 SHELL= /bin/bash
 
-# Build 'exprMatrix.tsv' This will download ~38 GB of sequencing data.
+# Build 'exprMatrix.tsv'. This will download ~38 GB of sequence data.
 all: exprMatrix.tsv
 
 # Use Docker executables.
@@ -23,7 +23,7 @@ gentrome.fa.gz: gencode.v38.pc_transcripts.fa.gz HIVmini.fa.gz GRCh38.p13.genome
 	$(DOCKER_RUN) cat gencode.v38.pc_transcripts.fa.gz HIVmini.fa.gz GRCh38.p13.genome.fa.gz > gentrome.fa.gz
 
 gencode.v38+HIV.idx: gentrome.fa.gz decoys.txt
-	salmon index -p8 -t gentrome.fa.gz -d decoys.txt -i gencode.v38+HIV.idx --gencode
+	$(DOCKER_RUN) salmon index -p8 -t gentrome.fa.gz -d decoys.txt -i gencode.v38+HIV.idx --gencode
 
 %.quant: %_1.fastq.gz %_2.fastq.gz gencode.v38+HIV.idx gencode.v38.pc_transcripts.fa.gz
 	$(DOCKER_RUN) salmon quant -p4 -i gencode.v38+HIV.idx -lA -1 $*_1.fastq.gz -2 $*_2.fastq.gz --validateMappings -o tmp-$*
@@ -33,6 +33,9 @@ gencode.v38+HIV.idx: gentrome.fa.gz decoys.txt
 exprMatrix.tsv: $$(QUANT)
 	$(DOCKER_RUN) echo "$^" | sed -e "s/.quant//g" -e "s/[[:space:]]/\t/g" > $@
 	$(DOCKER_RUN) paste -d" " $^ | awk -v OFS="\t" $(AWKSCRIPT) >> $@
+
+remove_intermediates:
+	rm -rf *.quant gentrome.fa.gz
 
 QUANT=	P2449_N716-S502.quant \
 	P2449_N716-S503.quant \

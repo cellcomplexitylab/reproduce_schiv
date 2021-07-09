@@ -1,5 +1,7 @@
 batch-effects-PMA.txt
 batch-effects-SAHA.txt
+decoys.txt
+gencode.v38+HIV.idx
 out-alive-no-bec-no-HIV.txt
 out-PMA.txt
 out-PMA-no-bec.txt
@@ -23,3 +25,6 @@ wfreq-SAHA-no-bec.txt
 *.pdf
 *.tsv
 *.vimtags
+*.fa.gz
+*.fastq.gz
+*.quant
