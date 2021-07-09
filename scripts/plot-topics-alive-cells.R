@@ -24,7 +24,7 @@ axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20",
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20",
    line=-1)
 title(xlab="Cell number", line=2, col.lab="gray30", family="Avenir Medium")
-title(ylab="Signature proportion", line=1, col.lab="gray30", family="Avenir Medium")
+title(ylab="Signature breakdown", line=1, col.lab="gray30", family="Avenir Medium")
 
 showtext_end()
 dev.off()
