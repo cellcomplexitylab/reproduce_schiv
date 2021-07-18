@@ -48,11 +48,11 @@ out-SAHA-no-bec.txt:
 	$(DOCKER_RUN) python scripts/LDA-3-groups-SAHA-no-bec.py
 
 # Plot signature proportions with PMA.
-bargraph-topics-PMA.pdf: alivecells.tsv out-PMA.txt out-PMA-no-bec.txt
+bargraph-topics-PMA.pdf bargraph-topics-PMA-no-bec.pdf: alivecells.tsv out-PMA.txt out-PMA-no-bec.txt
 	$(DOCKER_RUN) R -f scripts/plot-topics-PMA.R
 
 # Plot signature proportions with SAHA.
-bargraph-topics-SAHA.pdf: alivecells.tsv out-SAHA.txt out-SAHA-no-bec.txt
+bargraph-topics-SAHA.pdf bargraph-topics-SAHA-no-bec.pdf: alivecells.tsv out-SAHA.txt out-SAHA-no-bec.txt
 	$(DOCKER_RUN) R -f scripts/plot-topics-SAHA.R
 
 # Print genes in signatures for pathway analysis.

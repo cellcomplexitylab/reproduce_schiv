@@ -1,9 +1,10 @@
 library(showtext)
 font_add(family="Avenir Medium", regular="Avenir-Medium.ttf")
 
-topic_colors = c("#fceff0", "#eec4cf", "#ffe2e9")
+topic_colors = c("#e1b168", "#b96f20", "#1b343c")
 
 topics = read.table("out-PMA.txt")
+topics = topics[,c(2,3,1)] # Put HIV state on top.
 topics = as.matrix(topics / rowSums(topics))
 
 pdf("bargraph-topics-PMA.pdf", height=4, width=8 * 116 / 152)
@@ -26,6 +27,7 @@ dev.off()
 
 
 topics = read.table("out-PMA-no-bec.txt")
+topics = topics[,c(3,2,1)] # Put HIV state on top.
 topics = as.matrix(topics / rowSums(topics))
 
 pdf("bargraph-topics-PMA-no-bec.pdf", height=4, width=8 * 116 / 152)

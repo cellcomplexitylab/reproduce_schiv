@@ -11,7 +11,7 @@ topics = read.table("out-alive-no-bec-no-HIV.txt")
 topics = topics[,c(1,3,2)] # SAHA, DMSO, PMA
 topics = as.matrix(topics / rowSums(topics))
 
-pdf("bargraph-alive-cells-topics-no-bec-no-HIV.pdf", height=4, width=12)
+pdf("bargraph-alive-cells-topics-no-bec-no-HIV.pdf", height=4, width=8)
 showtext_begin()
 
 par(mar=c(3.1,2.1,0.7,0))
@@ -80,7 +80,7 @@ par(mar=c(3.1,3.1,0,0))
 
 plot(SAHA.signature, HIV.response, panel.first=grid(), xlim=c(40,80),
    bty="n", ylab="", xlab="", xaxt="n", yaxt="n")
-points(SAHA.signature, HIV.response, pch=19, cex=.8, col=type_colors[6])
+points(SAHA.signature, HIV.response, pch=19, cex=.8, col=topic_colors[1])
 
 axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
@@ -122,7 +122,7 @@ par(mar=c(3.1,3.1,0,0))
 
 plot(PMA.signature, HIV.response, panel.first=grid(), xlim=c(30,80),
    bty="n", ylab="", xlab="", xaxt="n", yaxt="n")
-points(PMA.signature, HIV.response, pch=19, cex=.8, col=type_colors[4])
+points(PMA.signature, HIV.response, pch=19, cex=.8, col=topic_colors[3])
 
 axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")

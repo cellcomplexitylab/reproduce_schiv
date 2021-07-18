@@ -36,7 +36,8 @@ par(mar=c(3.1,0.5,0.5,0.5))
 # Manual bar plot.
 bars = rev(head(SAHA.DAVID$enrichment, 10))
 labels = rev(head(SAHA.DAVID$Term, 10))
-labels = gsub("~", " — ", labels)
+labels = gsub("~", ": ", labels)
+# Truncate terms.
 labels = gsub("^(.{40}[^[:space:]]*)[[:space:]].*$", "\\1 ...", labels)
 
 plot(c(-30,35), c(0,10), 
@@ -68,7 +69,8 @@ par(mar=c(3.1,0.5,0.5,0.5))
 # Manual bar plot.
 bars = rev(head(PMA.DAVID$enrichment, 10))
 labels = rev(head(PMA.DAVID$Term, 10))
-labels = gsub("~", " — ", labels)
+labels = gsub("~", ": ", labels)
+# Truncate terms.
 labels = gsub("^(.{40}[^[:space:]]*)[[:space:]].*$", "\\1 ...", labels)
 
 plot(c(-30,35), c(0,10), 
