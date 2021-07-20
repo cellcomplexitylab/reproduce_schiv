@@ -3,7 +3,7 @@ font_add(family="Avenir Medium", regular="Avenir-Medium.ttf")
 
 topic_colors = c("#fae584", "#d9870f", "#724e2f")
 
-topics = read.table("out-SAHA.txt")
+topics = read.table("out-SAHA.txt", row.names=1)
 topics = as.matrix(topics / rowSums(topics))
 
 pdf("bargraph-topics-SAHA.pdf", height=4, width=8)
@@ -25,7 +25,7 @@ showtext_end()
 dev.off()
 
 
-topics = read.table("out-SAHA-no-bec.txt")
+topics = read.table("out-SAHA-no-bec.txt", row.names=1)
 topics = as.matrix(topics / rowSums(topics))
 
 pdf("bargraph-topics-SAHA-no-bec.pdf", height=4, width=8)

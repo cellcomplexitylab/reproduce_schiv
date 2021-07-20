@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-import re
-import sys
 
 import numpy as np
+import pandas as pd
+import re
+import sys
 
 import pyro
 import pyro.distributions as dist
@@ -65,8 +66,8 @@ PMA = frozenset([
 ])
 
 def model(data=None):
-   # Split data over batch, cell type and expresion.
-   batch, ctype, X = data
+   # Split data over cell, batch, cell type and expresion.
+   cell, batch, ctype, X = data
 
    # Set global parameter.
    batch_effects = pyro.param("batch_effects",
@@ -121,8 +122,8 @@ def model(data=None):
 
 
 def guide(data=None):
-   # Split data over batch, cell type and expresion.
-   batch, ctypes, X = data
+   # Split data over cell, batch, cell type and expresion.
+   cell, batch, ctypes, X = data
 
    # Use a conjugate guide for global variables.
    topic_weights_posterior = pyro.param(
@@ -186,11 +187,11 @@ def sc_data(fname, device='cpu'):
    list_of_ctypes = [re.sub(r"\+.*", "", x) for x in list_of_infos]
    unique_ctypes = sorted(list(set(list_of_ctypes)))
    list_of_ctype_ids = [unique_ctypes.index(x) for x in list_of_ctypes]
-   # Return the (batch, expression) pair.
+   # Return the (cells, batches, types, expressions) tuple.
    batch_tensor = torch.tensor(list_of_batch_ids).to(device)
    ctype_tensor = torch.tensor(list_of_ctype_ids).to(device)
    expr_tensor = torch.stack(list_of_exprs).to(device)
-   return batch_tensor, ctype_tensor, expr_tensor
+   return list_of_cells, batch_tensor, ctype_tensor, expr_tensor
 
 
 data = sc_data('alivecells.tsv')
@@ -200,7 +201,7 @@ torch.manual_seed(123)
 pyro.set_rng_seed(123)
 
 # Set global dimensions.
-batches, ctypes, X = data
+cells, batches, ctypes, X = data
 M = batches.max() + 1
 N = ctypes.max() + 1
 G = X.shape[-1]
@@ -225,13 +226,16 @@ for step in range(7000):
       scheduler.step()
 
 
+###
 out = pyro.param("doc_topic_posterior")
 wfreq = pyro.param("word_freqs_posterior")
 batch_effects = pyro.param("batch_effects")
 type_effects = pyro.param("type_effects")
-np.savetxt('out-PMA.txt', out.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt('wfreq-PMA.txt', wfreq.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt('batch-effects-PMA.txt',
+# Output signature breakdown with row names.
+pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
+   .to_csv("out-PMA.txt", sep="\t", header=False, float_format="%.5f")
+np.savetxt("wfreq-PMA.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
+np.savetxt("batch-effects-PMA.txt",
       batch_effects.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt('type-effects-PMA.txt',
+np.savetxt("type-effects-PMA.txt",
       type_effects.detach().cpu().numpy(), fmt="%.5f")

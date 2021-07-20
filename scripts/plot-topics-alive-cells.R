@@ -7,7 +7,7 @@ topic_colors = c("#fed769", "#6bc0b7", "#008f97")
 type_colors = c("#6db6ff", "#b5dafe", "#fe6db6",
        "#feb5da", "#9830b1", "#b68dff") 
 
-topics = read.table("out-alive-no-bec-no-HIV.txt")
+topics = read.table("out-alive-no-bec-no-HIV.txt", row.names=1)
 topics = topics[,c(1,3,2)] # SAHA, DMSO, PMA
 topics = as.matrix(topics / rowSums(topics))
 

@@ -16,6 +16,9 @@ RUN DEBIAN_FRONTEND=noninteractive TZ="America/New_York" apt-get install -y \
 RUN apt-get install -y python3 python3-pip && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN ln /usr/bin/python3 /usr/bin/python
 
+# Install Pandas 
+RUN pip3 install pandas==1.2.4
+
 # Install PyTorch and Pyro
 RUN pip3 install torch==1.9.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
 RUN pip3 install pyro-ppl==1.7.0

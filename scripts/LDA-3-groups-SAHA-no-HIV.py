@@ -106,7 +106,7 @@ SAHA = frozenset([
 
 def model(data=None):
    # Split data over cell, batch, cell type and expresion.
-   cell, batch, ctype, X = data
+   cells, batch, ctype, X = data
 
    # Set global parameter.
    batch_effects = pyro.param("batch_effects",
@@ -162,7 +162,7 @@ def model(data=None):
 
 def guide(data=None):
    # Split data over cell, batch, cell type and expresion.
-   cell, batch, ctypes, X = data
+   cells, batch, ctypes, X = data
 
    # Use a conjugate guide for global variables.
    topic_weights_posterior = pyro.param(
@@ -209,7 +209,8 @@ def sc_data(fname, device='cpu'):
    list_of_infos = list()
    list_of_exprs = list()
    # Convenience parsing function.
-   parse = lambda row: (row[0], row[1], [float(x) for x in row[2:]])
+   # Remove rightmost entry (HIV).
+   parse = lambda row: (row[0], row[1], [float(x) for x in row[2:-1]])
    with open(fname) as f:
       ignore_header = next(f)
       for line in f:
@@ -226,7 +227,7 @@ def sc_data(fname, device='cpu'):
    list_of_ctypes = [re.sub(r"\+.*", "", x) for x in list_of_infos]
    unique_ctypes = sorted(list(set(list_of_ctypes)))
    list_of_ctype_ids = [unique_ctypes.index(x) for x in list_of_ctypes]
-   # Return the (cells, batches, types, expressions) tuple.
+   # Return the (cells, batches, types, expressions) tuple.§
    batch_tensor = torch.tensor(list_of_batch_ids).to(device)
    ctype_tensor = torch.tensor(list_of_ctype_ids).to(device)
    expr_tensor = torch.stack(list_of_exprs).to(device)
@@ -272,9 +273,9 @@ batch_effects = pyro.param("batch_effects")
 type_effects = pyro.param("type_effects")
 # Output signature breakdown with row names.
 pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
-   .to_csv("out-SAHA.txt", sep="\t", header=False, float_format="%.5f")
-np.savetxt("wfreq-SAHA.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("batch-effects-SAHA.txt",
+   .to_csv("out-SAHA-no-HIV.txt", sep="\t", header=False, float_format="%.5f")
+np.savetxt("wfreq-SAHA-no-HIV.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
+np.savetxt("batch-effects-SAHA-no-HIV.txt",
       batch_effects.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("type-effects-SAHA.txt",
+np.savetxt("type-effects-SAHA-no-HIV.txt",
       type_effects.detach().cpu().numpy(), fmt="%.5f")

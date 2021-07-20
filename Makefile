@@ -15,7 +15,7 @@ alivecells.tsv: allcells.tsv
 	$(DOCKER_RUN) R -f scripts/make-alive-cells.R
 
 # Perform basic LDA, without HIV.
-out-alive-no-bec.txt-no-HIV.txt wfreq-alive-no-bec-no-HIV.txt: alivecells.tsv
+out-alive-no-bec-no-HIV.txt wfreq-alive-no-bec-no-HIV.txt: alivecells.tsv
 	$(DOCKER_RUN) python scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py
 
 # Plot representation of drug signatures.
@@ -32,20 +32,28 @@ PMA-GO.txt SAHA-GO.txt barplot-GO-PMA.pdf barplot-GO-SAHA.pdf: SAHA-DAVID.txt PM
 	$(DOCKER_RUN) R -f scripts/show-GO.R
 
 # LDA with batch-effect correction.
-out-PMA.txt:
+out-PMA.txt wfreq-PMA.txt: alivecells.tsv
 	$(DOCKER_RUN) python scripts/LDA-3-groups-PMA.py
 
 # LDA without batch-effect correction.
-out-PMA-no-bec.txt:
+out-PMA-no-bec.txt: alivecells.tsv
 	$(DOCKER_RUN) python scripts/LDA-3-groups-PMA-no-bec.py
 
+# LDA with batch-effect correction and no HIV.
+out-PMA-no-HIV.txt: alivecells.tsv
+	$(DOCKER_RUN) python scripts/LDA-3-groups-PMA-no-HIV.py
+
 # LDA with batch-effect correction.
-out-SAHA.txt:
+out-SAHA.txt wfreq-SAHA.txt: alivecells.tsv
 	$(DOCKER_RUN) python scripts/LDA-3-groups-SAHA.py
 
 # LDA without batch-effect correction.
-out-SAHA-no-bec.txt:
+out-SAHA-no-bec.txt: alivecells.tsv
 	$(DOCKER_RUN) python scripts/LDA-3-groups-SAHA-no-bec.py
+
+# LDA with batch-effect correction and no HIV.
+out-SAHA-no-HIV.txt: alivecells.tsv
+	$(DOCKER_RUN) python scripts/LDA-3-groups-SAHA-no-HIV.py
 
 # Plot signature proportions with PMA.
 bargraph-topics-PMA.pdf bargraph-topics-PMA-no-bec.pdf: alivecells.tsv out-PMA.txt out-PMA-no-bec.txt
@@ -64,8 +72,8 @@ PMA-signature-weights.csv PMA-signature-gene_ids.txt: data/gene_annotations.tsv 
 	$(DOCKER_RUN) R -f scripts/make-word-signatures-PMA.R
 
 # Print genes in signature for pathway analysis.
-PMA-signature-1-GO.txt PMA-signature-2-GO.txt SAHA-signature-GO.txt barplot-GO-PMA-signature-1.pdf barplot-GO-PMA-signature-2.pdf barplot-GO-SAHA-signature.pdf: SAHA-signature-DAVID.txt PMA-signature-DAVID.txt
-	R -f show-GO-signatures.R
+PMA-signature-GO.txt SAHA-signature-GO.txt barplot-GO-PMA-signature.pdf  barplot-GO-SAHA-signature.pdf: SAHA-signature-DAVID.txt PMA-signature-DAVID.txt
+	$(DOCKER_RUN) R -f scripts/show-GO-signatures.R
 
 # Compare signatures of Jurkat and J-LatA2 cells.
 scatter-PMA-signature.pdf scatter-SAHA-signature.pdf: wfreq-PMA.txt wfreq-SAHA.txt type-effects-PMA.txt type-effects-SAHA.txt

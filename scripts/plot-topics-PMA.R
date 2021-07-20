@@ -3,7 +3,7 @@ font_add(family="Avenir Medium", regular="Avenir-Medium.ttf")
 
 topic_colors = c("#e1b168", "#b96f20", "#1b343c")
 
-topics = read.table("out-PMA.txt")
+topics = read.table("out-PMA.txt", row.names=1)
 topics = topics[,c(2,3,1)] # Put HIV state on top.
 topics = as.matrix(topics / rowSums(topics))
 
@@ -26,7 +26,7 @@ showtext_end()
 dev.off()
 
 
-topics = read.table("out-PMA-no-bec.txt")
+topics = read.table("out-PMA-no-bec.txt", row.names=1)
 topics = topics[,c(3,2,1)] # Put HIV state on top.
 topics = as.matrix(topics / rowSums(topics))
 
