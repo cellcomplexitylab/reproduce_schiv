@@ -10,13 +10,17 @@ allcells.tsv: data/exprMatrix.tsv data/sampleSheet.tsv
 pca-all-cells.pdf all-cells-total-reads.pdf: allcells.tsv
 	$(DOCKER_RUN) R -f scripts/plot-pca-all-cells.R
 
-# Remove dead cells using PCA.
+# Remove "dead cells" using PCA.
 alivecells.tsv: allcells.tsv
 	$(DOCKER_RUN) R -f scripts/make-alive-cells.R
 
 # Perform basic LDA, without HIV.
 out-alive-no-bec-no-HIV.txt wfreq-alive-no-bec-no-HIV.txt: alivecells.tsv
 	$(DOCKER_RUN) python scripts/LDA-3-groups-alive-cells-no-bec-no-HIV.py
+
+# Perform basic LDA, with HIV.
+out-alive-no-bec.txt wfreq-alive-no-bec.txt: alivecells.tsv
+	$(DOCKER_RUN) python scripts/LDA-3-groups-alive-cells-no-bec.py
 
 # Plot representation of drug signatures.
 bargraph-alive-cells-topics-no-bec-no-HIV.pdf simplex-topics-alive-cells-no-bec-no-HIV.pdf SAHA-signature-vs-HIV.pdf PMA-signature-vs-HIV.pdf: alivecells.tsv out-alive-no-bec-no-HIV.txt
@@ -41,7 +45,7 @@ out-PMA-no-bec.txt: alivecells.tsv
 
 # LDA with batch-effect correction and no HIV.
 out-PMA-no-HIV.txt: alivecells.tsv
-	$(DOCKER_RUN) python scripts/LDA-3-groups-PMA-no-HIV.py
+	$(DOCKER_RUN) python scripts/LDA-2-groups-PMA-no-HIV.py
 
 # LDA with batch-effect correction.
 out-SAHA.txt wfreq-SAHA.txt: alivecells.tsv
@@ -53,7 +57,19 @@ out-SAHA-no-bec.txt: alivecells.tsv
 
 # LDA with batch-effect correction and no HIV.
 out-SAHA-no-HIV.txt: alivecells.tsv
-	$(DOCKER_RUN) python scripts/LDA-3-groups-SAHA-no-HIV.py
+	$(DOCKER_RUN) python scripts/LDA-2-groups-SAHA-no-HIV.py
+
+# Control LDA with scramble HIV (SAHA)
+scramble-traces-SAHA.txt: alivecells.tsv
+	$(DOCKER_RUN) python scripts/LDA-3-groups-SAHA-scramble.py > $@
+
+# Control LDA with scramble HIV (PMA)
+scramble-traces-PMA.txt: alivecells.tsv
+	$(DOCKER_RUN) python scripts/LDA-3-groups-PMA-scramble.py > $@
+
+# Scramble traces (SAHA + PMA)
+scramble-traces.pdf: scramble-traces-SAHA.txt scramble-traces-PMA.txt
+	$(DOCKER_RUN) R -f scripts/plot-scramble-traces.R
 
 # Plot signature proportions with PMA.
 bargraph-topics-PMA.pdf bargraph-topics-PMA-no-bec.pdf: alivecells.tsv out-PMA.txt out-PMA-no-bec.txt
