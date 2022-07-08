@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-
 import numpy as np
 import pandas as pd
 import re
@@ -16,11 +15,11 @@ import torch.nn.functional as F
 
 global K # Number of topics.
 global M # Number of batches.
-global N # Number of genes.
+global N # Number of types.
 global G # Number of genes.
 
 # Set the umber of topics now.
-K = 3
+K = 2
 
 
 PMA = frozenset([
@@ -69,16 +68,6 @@ def model(data=None):
    # Split data over cell, batch, cell type and expresion.
    cell, batch, ctype, X = data
 
-   # Set global parameter.
-   batch_effects = pyro.param("batch_effects",
-         torch.ones(M-1, G).to(X.device),
-         constraint = torch.distributions.constraints.positive
-   )
-   type_effects = pyro.param("type_effects",
-         torch.ones(N-1, G).to(X.device),
-         constraint = torch.distributions.constraints.positive
-   )
-
    # Sample globals.
    with pyro.plate("topics", K):
       # Sample global frequencies of the topics.
@@ -105,12 +94,6 @@ def model(data=None):
       # Sampling a topic then a word is equivalent
       # to sampling a word from weighted frequencies.
       freqs = torch.mm(doc_topics, word_freqs)
-      # Apply batch effects.
-      batch_mat = torch.cat([torch.ones(1,G).to(X.device), batch_effects])
-      freqs *= torch.mm(F.one_hot(batch).float(), batch_mat)
-      # Apply type effects.
-      type_mat = torch.cat([torch.ones(1,G).to(X.device), type_effects])
-      freqs *= torch.mm(F.one_hot(ctype).float(), type_mat)
       # Sample word counts in document.
       data = pyro.sample(
             name = "g",
@@ -229,13 +212,7 @@ for step in range(7000):
 ###
 out = pyro.param("doc_topic_posterior")
 wfreq = pyro.param("word_freqs_posterior")
-batch_effects = pyro.param("batch_effects")
-type_effects = pyro.param("type_effects")
 # Output signature breakdown with row names.
 pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
-   .to_csv("out-PMA.txt", sep="\t", header=False, float_format="%.5f")
-np.savetxt("wfreq-PMA.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("batch-effects-PMA.txt",
-      batch_effects.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("type-effects-PMA.txt",
-      type_effects.detach().cpu().numpy(), fmt="%.5f")
+   .to_csv("out-PMA-no-bec.txt", sep="\t", header=False, float_format="%.5f")
+np.savetxt("wfreq-PMA-no-bec.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")

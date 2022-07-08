@@ -21,14 +21,16 @@ type = c(0,2,4)[treatment] + c(1,2)[celltype]
 # 6: Jurkat+SAHA
 
 expr = as.matrix(cells[,-1])
-# Get total read count.
+# Get total read count per cell
 total = rowSums(expr)
 # Normalize by total expression.
-expr = expr / rowSums(expr)
+expr = expr / total
 pca = prcomp(expr, scale=TRUE)
 
+# Fraction explained variance.
+fvar = round(100 * pca$sdev^2 / sum(pca$sdev^2))
 
-pdf("pca-all-cells.pdf")
+pdf("pca-all-cells.pdf", height=4, width=8)
 showtext_begin()
 
 par(mar=c(3.1,3.1,0,0))
@@ -40,14 +42,72 @@ points(pca$x, pch=19, cex=.8, col=type_colors[type])
 
 axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
-title(xlab="PC-1 (a.u.)", line=2, col.lab="gray30", family="Avenir Medium")
-title(ylab="PC-2 (a.u.)", line=2, col.lab="gray30", family="Avenir Medium")
+title(xlab=paste("PC-1 (a.u.), ", fvar[1], "% variance", sep="", collapse=""),
+      line=2, col.lab="gray30", family="Avenir Medium")
+title(ylab=paste("PC-2 (a.u.), ", fvar[2], "% variance", sep="", collapse=""),
+      line=2, col.lab="gray30", family="Avenir Medium")
 
 legend(x="topright", inset=.01,
      bg="white", box.col="gray50",
-     col=type_colors, pch=19, cex=.8,
-     legend=c("J-LatA2 / DMSO", "Jurkat / DMSO", "J-LatA2 / PMA",
-              "Jurkat / PMA", "J-LatA2 / SAHA", "Jurkat / SAHA"))
+     # Change the order to match the rest of the manuscript.
+     col=type_colors[c(1,2,5,6,3,4)], pch=19, cex=.8,
+     legend=c("J-LatA2 / DMSO", "Jurkat / DMSO",
+              "J-LatA2 / SAHA", "Jurkat / SAHA",
+              "J-LatA2 / PMA",  "Jurkat / PMA")
+)
+
+showtext_end()
+dev.off()
+
+
+# Print the main genes of PC1.
+sorted_genes = sort(pca$rotation[,1])
+up = head(gsub("\\.[0-9]*", "", names(sorted_genes)), 50)
+write(up, ncol=1, file="PC1_up_gene_ids.txt")
+
+
+# Plot correlates of the principal components.
+pdf("correlates.pdf", height=4, width=8)
+showtext_begin()
+
+par(mar=c(3.1,3.1,0.5,0))
+par(mfrow=c(2,2))
+
+plot(pca$x[,1], total/1e3, panel.first=grid(), col="gray20",
+     bty="n", ylab="", xlab="", xaxt="n", yaxt="n", ylim=c(0,1000))
+points(pca$x[,1], total/1e3, pch=19, cex=.8, col=type_colors[type])
+
+axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
+axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
+title(xlab="PC-1 (a.u.)", line=2, col.lab="gray30", family="Avenir Medium")
+title(ylab="Mapped reads (x 1000)", line=2, col.lab="gray30", family="Avenir Medium")
+
+plot(pca$x[,2], total/1e3, panel.first=grid(), col="gray20",
+     bty="n", ylab="", xlab="", xaxt="n", yaxt="n", ylim=c(0,1000))
+points(pca$x[,2], total/1e3, pch=19, cex=.8, col=type_colors[type])
+
+axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
+axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
+title(xlab="PC-2 (a.u.)", line=2, col.lab="gray30", family="Avenir Medium")
+title(ylab="Mapped reads (x 1000)", line=2, col.lab="gray30", family="Avenir Medium")
+
+plot(pca$x[,1], 100*expr[,ncol(expr)], panel.first=grid(), col="gray20",
+     bty="n", ylab="", xlab="", xaxt="n", yaxt="n")
+points(pca$x[,1], 100*expr[,ncol(expr)], pch=19, cex=.8, col=type_colors[type])
+
+axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
+axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
+title(xlab="PC-1 (a.u.)", line=2, col.lab="gray30", family="Avenir Medium")
+title(ylab="Reads in GFP-nef (%)", line=2, col.lab="gray30", family="Avenir Medium")
+
+plot(pca$x[,2], 100*expr[,ncol(expr)], panel.first=grid(), col="gray20",
+     bty="n", ylab="", xlab="", xaxt="n", yaxt="n")
+points(pca$x[,2], 100*expr[,ncol(expr)], pch=19, cex=.8, col=type_colors[type])
+
+axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
+axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
+title(xlab="PC-2 (a.u.)", line=2, col.lab="gray30", family="Avenir Medium")
+title(ylab="Reads in GFP-nef (%)", line=2, col.lab="gray30", family="Avenir Medium")
 
 showtext_end()
 dev.off()
@@ -56,7 +116,7 @@ dev.off()
 total_colors = plate_colors[plate]
 total_colors[pca$x[,1] > 10] = "black"
 
-pdf("all-cells-total-reads.pdf")
+pdf("all-cells-total-reads.pdf", height=4, width=8)
 showtext_begin()
 
 par(mar=c(3.1,2.1,0.7,0))
@@ -70,7 +130,7 @@ axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20",
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20",
       line=-1)
 title(xlab="Cell number", line=2, col.lab="gray30", family="Avenir Medium")
-title(ylab="Total amount of reads (thousands)", line=1, col.lab="gray30",
+title(ylab="Mapped reads (x 1000)", line=1, col.lab="gray30",
       family="Avenir Medium")
 
 legend(x="topright", inset=.01,

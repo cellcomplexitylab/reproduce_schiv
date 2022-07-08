@@ -6,7 +6,7 @@ out = out[,c(3,1,2)]
 wfreq = wfreq[c(3,1,2),]
 
 # Get gene names.
-genes = read.delim("data/gene_annotations.tsv")
+genes = read.delim("data/gene_annotations.tsv.gz")
 genes$gene_id = gsub("\\.[0-9]*", "", genes$gene_id)
 cells = read.delim("alivecells.tsv", row.names=1)
 gene_id = colnames(cells)[-1]
@@ -17,12 +17,23 @@ names[is.na(names)] = gene_id[is.na(names)]
 colnames(wfreq) = names
 
 # Find the percent reads attributed to the signature.
-total = out %*% wfreq
-S1 = outer(out[,1], wfreq[1,])
-xS1 = colMeans(S1 / total)
+score = function(w, idx) {
+   w = w / rowSums(w)
+   ranks = apply(w, rank, MARGIN=2)
+   scores = (w[idx,] - w[ranks == 2])^2 / w[idx,] / (1-w[idx,])
+   scores[ranks[idx,] != 3] = 0
+   return(scores)
+}
 
-names(xS1) = names
-SAHA = 100 * sort(xS1, decreasing=TRUE)
+xS1 = score(wfreq, 1)
+SAHA = 100 * sort(xS1, decreasing=TRUE) / max(xS1)
+
+#total = out %*% wfreq
+#S1 = outer(out[,1], wfreq[1,])
+#xS1 = colMeans(S1 / total)
+#
+#names(xS1) = names
+#SAHA = 100 * sort(xS1, decreasing=TRUE)
 
 SAHA.pairs = apply(data.frame(as.integer(SAHA), names(SAHA)), MARGIN=1,
    paste, collapse=",")
