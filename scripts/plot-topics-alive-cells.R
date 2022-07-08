@@ -1,9 +1,7 @@
-# Confidence interval for Speaman rho:
-# https://stats.stackexchange.com/q/18887/10849
 library(showtext)
 font_add(family="Avenir Medium", regular="Avenir-Medium.ttf")
 
-topic_colors = c("#fed769", "#6bc0b7", "#008f97")
+topic_colors = c("#9830b1", "#6db6ff", "#feb5da")
 type_colors = c("#6db6ff", "#b5dafe", "#fe6db6",
        "#feb5da", "#9830b1", "#b68dff") 
 
@@ -60,8 +58,8 @@ polygon(x=c(-.577, .577, 0, -.577), y=c(0, 0, 1, 0), border="gray80")
 legend(x="topright", inset=0.02,
      bg="white", box.col="gray50",
      col=type_colors, pch=19, cex=.8,
-     legend=c("J-LatA2 / DMSO", "Jurkat / DMSO", "J-LatA2 / PMA",
-              "Jurkat / PMA", "J-LatA2 / SAHA", "Jurkat / SAHA"))
+     legend=c("J-Lat A2 + DMSO", "Jurkat + DMSO", "J-Lat A2 + PMA",
+              "Jurkat + PMA", "J-Lat A2 + SAHA", "Jurkat + SAHA"))
 
 dev.off()
 

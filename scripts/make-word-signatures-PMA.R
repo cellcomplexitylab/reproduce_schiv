@@ -14,12 +14,22 @@ names[is.na(names)] = gene_id[is.na(names)]
 colnames(wfreq) = names
 
 # Find the percent reads attributed to the signature.
-total = out %*% wfreq
-S1 = outer(out[,1], wfreq[1,])
-xS1 = colMeans(S1 / total)
+score = function(w, idx) {
+   w = w / rowSums(w)
+   ranks = apply(w, rank, MARGIN=2)
+   scores = (w[idx,] - w[ranks == 2])^2 / w[idx,] / (1-w[idx,])
+   scores[ranks[idx,] != 3] = 0
+   return(scores)
+}
 
-names(xS1) = names
-PMA = 100 * sort(xS1, decreasing=TRUE)
+xS1 = score(wfreq, 1)
+PMA = 100 * sort(xS1, decreasing=TRUE) / max(xS1)
+#total = out %*% wfreq
+#S1 = outer(out[,1], wfreq[1,])
+#xS1 = colMeans(S1 / total)
+#
+#names(xS1) = names
+#PMA = 100 * sort(xS1, decreasing=TRUE)
 
 PMA.pairs = apply(data.frame(as.integer(PMA), names(PMA)), MARGIN=1,
    paste, collapse=",")

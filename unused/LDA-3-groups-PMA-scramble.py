@@ -3,6 +3,7 @@
 
 import numpy as np
 import pandas as pd
+import random
 import re
 import sys
 
@@ -15,7 +16,7 @@ import torch.nn.functional as F
 
 global K # Number of topics.
 global M # Number of batches.
-global N # Number of genes.
+global N # Number of types.
 global G # Number of genes.
 
 # Set the umber of topics now.
@@ -169,8 +170,7 @@ def sc_data(fname, device='cpu'):
    list_of_infos = list()
    list_of_exprs = list()
    # Convenience parsing function.
-   # Remove rightmost entry (HIV).
-   parse = lambda row: (row[0], row[1], [float(x) for x in row[2:-1]])
+   parse = lambda row: (row[0], row[1], [float(x) for x in row[2:]])
    with open(fname) as f:
       ignore_header = next(f)
       for line in f:
@@ -196,46 +196,36 @@ def sc_data(fname, device='cpu'):
 
 data = sc_data('alivecells.tsv')
 
-pyro.clear_param_store()
-torch.manual_seed(123)
-pyro.set_rng_seed(123)
-
 # Set global dimensions.
 cells, batches, ctypes, X = data
 M = batches.max() + 1
 N = ctypes.max() + 1
 G = X.shape[-1]
 
-optimizer = torch.optim.AdamW
-scheduler = pyro.optim.PyroLRScheduler(
-      scheduler_constructor = torch.optim.lr_scheduler.ExponentialLR,
-      optim_args = {'optimizer': optimizer, 'optim_args': {'lr': 0.01}, 'gamma': 0.1},
-      clip_args = {'clip_norm': 5.}
-)
-svi = pyro.infer.SVI(model, guide, scheduler,
-      loss=pyro.infer.Trace_ELBO())
+# Run 110 repetitions where HIV is shuffled.
+# The first 10 are not shuffled.
+for iterno in range(110):
+   # Shuffle HIV (last record of X).
+   if iterno > 9:
+      X[:,-1] = X[torch.randperm(X.shape[0]),-1]
+   pyro.clear_param_store()
+   optimizer = torch.optim.AdamW
+   scheduler = pyro.optim.PyroLRScheduler(
+         scheduler_constructor = torch.optim.lr_scheduler.ExponentialLR,
+         optim_args = {'optimizer': optimizer, 'optim_args': {'lr': 0.01}, 'gamma': 0.1},
+         clip_args = {'clip_norm': 5.}
+   )
+   svi = pyro.infer.SVI(model, guide, scheduler,
+         loss=pyro.infer.Trace_ELBO())
 
 
-loss = 0.
-for step in range(7000):
-   loss += svi.step(data)
-   if (step+1) % 1000 == 0:
-      sys.stderr.write("iter {}: loss = {:.2f}\n".format(step+1, loss / 1e9))
-      loss = 0.
-   if (step+1) % 6000 == 0:
-      scheduler.step()
-
-
-###
-out = pyro.param("doc_topic_posterior")
-wfreq = pyro.param("word_freqs_posterior")
-batch_effects = pyro.param("batch_effects")
-type_effects = pyro.param("type_effects")
-# Output signature breakdown with row names.
-pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
-   .to_csv("out-PMA-no-HIV.txt", sep="\t", header=False, float_format="%.5f")
-np.savetxt("wfreq-PMA-no-HIV.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("batch-effects-PMA-no-HIV.txt",
-      batch_effects.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("type-effects-PMA-no-HIV.txt",
-      type_effects.detach().cpu().numpy(), fmt="%.5f")
+   loss = 0.
+   for step in range(5000):
+      loss += svi.step(data)
+      if (step+1) % 100 == 0:
+         sys.stdout.write("iter {}: loss = {:.3f}\n".format(step+1, loss / 1e9))
+         loss = 0.
+      if (step+1) % 3500 == 0:
+         scheduler.step()
+      if (step+1) % 4500 == 0:
+         scheduler.step()

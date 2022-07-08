@@ -111,8 +111,7 @@ def sc_data(fname, device='cpu'):
    list_of_infos = list()
    list_of_exprs = list()
    # Convenience parsing function.
-   # Remove rightmost entry (HIV).
-   parse = lambda row: (row[0], row[1], [float(x) for x in row[2:-1]])
+   parse = lambda row: (row[0], row[1], [float(x) for x in row[2:]])
    with open(fname) as f:
       ignore_header = next(f)
       for line in f:
@@ -170,5 +169,5 @@ out = pyro.param("doc_topic_posterior")
 wfreq = pyro.param("word_freqs_posterior")
 # Output signature breakdown with row names.
 pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
-   .to_csv("out-alive-no-bec-no-HIV.txt", sep="\t", header=False, float_format="%.5f")
-np.savetxt("wfreq-alive-no-bec-no-HIV.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
+   .to_csv("out-alive-no-bec.txt", sep="\t", header=False, float_format="%.5f")
+np.savetxt("wfreq-alive-no-bec.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")

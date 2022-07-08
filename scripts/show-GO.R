@@ -1,93 +1,48 @@
 library(showtext)
 font_add(family="Avenir Medium", regular="Avenir-Medium.ttf")
 
-SAHA.DAVID = read.delim("SAHA-DAVID.txt")
-PMA.DAVID = read.delim("PMA-DAVID.txt")
+args = commandArgs(trailingOnly=TRUE)
 
-# Sort by fold enrichment.
-SAHA.DAVID = SAHA.DAVID[order(SAHA.DAVID$Fold.Enrichment, decreasing=TRUE),]
-PMA.DAVID = PMA.DAVID[order(PMA.DAVID$Fold.Enrichment, decreasing=TRUE),]
+input_fname = args[[1]]
+output_fname = args[[2]]
 
-# Keep every term with a p-value below 0.01 after correction.
-SAHA.DAVID = subset(SAHA.DAVID, Benjamini < .01)
-PMA.DAVID = subset(PMA.DAVID, Benjamini < .01)
+data = read.delim(input_fname)
 
-# Keep only GO terms.
-SAHA.DAVID = subset(SAHA.DAVID, grepl("^GO:", SAHA.DAVID$Term))
-PMA.DAVID = subset(PMA.DAVID, grepl("^GO:", PMA.DAVID$Term))
+# Keep every term with a corrected p-value below 0.1.
+data = subset(data, Benjamini < .1)
 
-SAHA.DAVID = data.frame(enrichment=round(SAHA.DAVID$Fold.Enrichment, 1),
-   Term=SAHA.DAVID$Term)
-PMA.DAVID = data.frame(enrichment=round(PMA.DAVID$Fold.Enrichment, 1),
-   Term=PMA.DAVID$Term)
+# Keep only GO terms (just to be sure).
+data = subset(data, grepl("^GO:", data$Term))
 
-write.table(SAHA.DAVID, file="SAHA-GO.txt", sep="\t",
-   quote=FALSE, row.names=FALSE)
-write.table(PMA.DAVID, file="PMA-GO.txt", sep="\t",
-   quote=FALSE, row.names=FALSE)
+#enrichment = round(data$Fold.Enrichment)
 
-SAHA_colors = c("#fed769", "#fed7699e")
-
-pdf("barplot-GO-SAHA.pdf", height=3, width=8)
+pdf(output_fname, height=3.5, width=8)
 showtext_begin()
 
 par(mar=c(3.1,0.5,0.5,0.5))
 
-# Manual bar plot.
-bars = rev(head(SAHA.DAVID$enrichment, 10))
-labels = rev(head(SAHA.DAVID$Term, 10))
+# Manual bar plot (keep at most 10).
+bars = rev(head(-log10(data$Benjamini), 10))
+labels = rev(head(data$Term, 10))
 labels = gsub("~", ": ", labels)
 # Truncate terms.
 labels = gsub("^(.{40}[^[:space:]]*)[[:space:]].*$", "\\1 ...", labels)
 
-plot(c(-30,35), c(0,10), 
+top = ceiling(max(bars))
+plot(top*c(-1,1), c(0,10), 
    bty="n", ylab="", xlab="", xaxt="n", yaxt="n", type="n")
-rect(xleft=0, ybottom=.2 + 0:9, xright=bars,
-   ytop=-.2 + 1:10, border=NA, col=SAHA_colors)
-text(x=-1, y=.5 + 0:9, adj=c(1,.5), labels,
+rect(xleft=0, ybottom=.2 + 0:(length(bars)-1), xright=bars,
+   ytop=-.2 + 1:length(bars), border=NA, col=c("gray70", "gray80"))
+text(x=-.05 * top, y=.5 + 0:(length(bars)-1), adj=c(1,.5), labels,
    family="Avenir Medium", cex=.8, col="gray30")
 
-abline(v=(1:7)*5, col="white", lwd=2)
+abline(v=seq(from=0, to=top, length.out=6), col="white", lwd=2)
 axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20",
-   at=c(0:7)*5)
+   at=seq(from=0, to=top, length.out=6))
 #title(xlab="Fold enrichment", line=2, col.lab="gray30", family="Avenir Medium")
-mtext(text="Fold enrichment", col="gray30", family="Avenir Medium", side=1,
-   line=2, at=17.5)
+mtext(text="Log10 corrected p-value", col="gray30", family="Avenir Medium", side=1,
+   line=2, at=top / 2)
 
 
 showtext_end()
 dev.off()
-
-
-PMA_colors = c("#008f97", "#008f97ce")
-
-pdf("barplot-GO-PMA.pdf", height=3, width=8)
-showtext_begin()
-
-par(mar=c(3.1,0.5,0.5,0.5))
-
-# Manual bar plot.
-bars = rev(head(PMA.DAVID$enrichment, 10))
-labels = rev(head(PMA.DAVID$Term, 10))
-labels = gsub("~", ": ", labels)
-# Truncate terms.
-labels = gsub("^(.{40}[^[:space:]]*)[[:space:]].*$", "\\1 ...", labels)
-
-plot(c(-30,35), c(0,10), 
-   bty="n", ylab="", xlab="", xaxt="n", yaxt="n", type="n")
-rect(xleft=0, ybottom=.2 + 0:9, xright=bars,
-   ytop=-.2 + 1:10, border=NA, col=PMA_colors)
-text(x=-1, y=.5 + 0:9, adj=c(1,.5), labels,
-   family="Avenir Medium", cex=.8, col="gray30")
-
-abline(v=(1:7)*5, col="white", lwd=2)
-axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20",
-   at=c(0:7)*5)
-#title(xlab="Fold enrichment", line=2, col.lab="gray30", family="Avenir Medium")
-mtext(text="Fold enrichment", col="gray30", family="Avenir Medium", side=1,
-   line=2, at=17.5)
-
-
-showtext_end()
-dev.off()
-

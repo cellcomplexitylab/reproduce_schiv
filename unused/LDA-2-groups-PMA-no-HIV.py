@@ -15,16 +15,68 @@ import torch.nn.functional as F
 
 global K # Number of topics.
 global M # Number of batches.
-global N # Number of types.
+global N # Number of genes.
 global G # Number of genes.
 
 # Set the umber of topics now.
-K = 3
+K = 2
 
+
+PMA = frozenset([
+      "P2769_N710.S503", "P2769_N711.S510", "P2771_N706.S511",
+      "P2770_N711.S522", "P2770_N705.S521", "P2771_N702.S510",
+      "P2769_N701.S505", "P2770_N703.S516", "P2771_N714.S510",
+      "P2769_N701.S510", "P2769_N706.S511", "P2769_N711.S503",
+      "P2769_N705.S511", "P2771_N715.S503", "P2771_N715.S511",
+      "P2771_N707.S503", "P2769_N705.S510", "P2771_N714.S508",
+      "P2770_N707.S521", "P2771_N701.S511", "P2770_N710.S522",
+      "P2769_N714.S508", "P2769_N715.S510", "P2769_N712.S510",
+      "P2770_N704.S516", "P2769_N704.S505", "P2769_N712.S508",
+      "P2769_N714.S510", "P2770_N703.S521", "P2771_N712.S503",
+      "P2770_N705.S522", "P2770_N701.S522", "P2769_N704.S510",
+      "P2770_N714.S521", "P2770_N703.S522", "P2771_N710.S511",
+      "P2771_N712.S511", "P2770_N707.S515", "P2770_N710.S521",
+      "P2770_N711.S515", "P2771_N702.S511", "P2769_N702.S511",
+      "P2771_N704.S505", "P2771_N711.S503", "P2771_N703.S505",
+      "P2769_N707.S503", "P2771_N707.S511", "P2771_N704.S510",
+      "P2770_N715.S521", "P2770_N714.S520", "P2771_N704.S511",
+      "P2771_N711.S511", "P2771_N703.S511", "P2769_N707.S511",
+      "P2769_N703.S510", "P2771_N715.S508", "P2769_N701.S511",
+      "P2769_N715.S503", "P2770_N702.S522", "P2770_N706.S522",
+      "P2770_N714.S522", "P2769_N710.S510", "P2771_N705.S511",
+      "P2771_N702.S505", "P2769_N705.S505", "P2771_N705.S510",
+      "P2769_N703.S511", "P2770_N712.S522", "P2771_N712.S508",
+      "P2770_N701.S521", "P2769_N710.S511", "P2771_N714.S503",
+      "P2769_N704.S511", "P2770_N706.S516", "P2770_N712.S521",
+      "P2771_N715.S510", "P2769_N702.S505", "P2770_N715.S522",
+      "P2771_N703.S510", "P2770_N705.S516", "P2771_N714.S511",
+      "P2770_N702.S521", "P2770_N712.S515", "P2769_N712.S511",
+      "P2769_N706.S510", "P2771_N701.S510", "P2770_N711.S521",
+      "P2769_N711.S511", "P2769_N706.S505", "P2771_N710.S503",
+      "P2770_N707.S522", "P2770_N701.S516", "P2770_N710.S515",
+      "P2771_N711.S510", "P2771_N706.S510", "P2770_N715.S515",
+      "P2769_N712.S503", "P2771_N707.S510", "P2769_N715.S508",
+      "P2770_N704.S522", "P2771_N712.S510", "P2769_N714.S503",
+      "P2769_N702.S510", "P2770_N714.S515", "P2771_N701.S505",
+      "P2769_N707.S510", "P2771_N710.S510", "P2770_N706.S521",
+      "P2770_N712.S520", "P2769_N715.S511", "P2770_N715.S520",
+      "P2771_N706.S505", "P2770_N704.S521", "P2769_N714.S511",
+      "P2770_N702.S516", "P2769_N703.S505", "P2771_N705.S505",
+])
 
 def model(data=None):
    # Split data over cell, batch, cell type and expresion.
-   cells, batch, ctype, X = data
+   cell, batch, ctype, X = data
+
+   # Set global parameter.
+   batch_effects = pyro.param("batch_effects",
+         torch.ones(M-1, G).to(X.device),
+         constraint = torch.distributions.constraints.positive
+   )
+   type_effects = pyro.param("type_effects",
+         torch.ones(N-1, G).to(X.device),
+         constraint = torch.distributions.constraints.positive
+   )
 
    # Sample globals.
    with pyro.plate("topics", K):
@@ -52,6 +104,12 @@ def model(data=None):
       # Sampling a topic then a word is equivalent
       # to sampling a word from weighted frequencies.
       freqs = torch.mm(doc_topics, word_freqs)
+      # Apply batch effects.
+      batch_mat = torch.cat([torch.ones(1,G).to(X.device), batch_effects])
+      freqs *= torch.mm(F.one_hot(batch).float(), batch_mat)
+      # Apply type effects.
+      type_mat = torch.cat([torch.ones(1,G).to(X.device), type_effects])
+      freqs *= torch.mm(F.one_hot(ctype).float(), type_mat)
       # Sample word counts in document.
       data = pyro.sample(
             name = "g",
@@ -64,7 +122,7 @@ def model(data=None):
 
 def guide(data=None):
    # Split data over cell, batch, cell type and expresion.
-   cells, batch, ctypes, X = data
+   cell, batch, ctypes, X = data
 
    # Use a conjugate guide for global variables.
    topic_weights_posterior = pyro.param(
@@ -117,6 +175,7 @@ def sc_data(fname, device='cpu'):
       ignore_header = next(f)
       for line in f:
          cell, info, expr = parse(line.split())
+         if cell not in PMA: continue
          list_of_cells.append(cell)
          list_of_infos.append(info)
          list_of_exprs.append(torch.tensor(expr))
@@ -126,7 +185,7 @@ def sc_data(fname, device='cpu'):
    list_of_batch_ids = [unique_plates.index(x) for x in list_of_plates]
    # Extract cell type from treatment info.
    list_of_ctypes = [re.sub(r"\+.*", "", x) for x in list_of_infos]
-   unique_ctypes = list(set(list_of_ctypes))
+   unique_ctypes = sorted(list(set(list_of_ctypes)))
    list_of_ctype_ids = [unique_ctypes.index(x) for x in list_of_ctypes]
    # Return the (cells, batches, types, expressions) tuple.
    batch_tensor = torch.tensor(list_of_batch_ids).to(device)
@@ -156,6 +215,7 @@ scheduler = pyro.optim.PyroLRScheduler(
 svi = pyro.infer.SVI(model, guide, scheduler,
       loss=pyro.infer.Trace_ELBO())
 
+
 loss = 0.
 for step in range(7000):
    loss += svi.step(data)
@@ -165,10 +225,17 @@ for step in range(7000):
    if (step+1) % 6000 == 0:
       scheduler.step()
 
+
 ###
 out = pyro.param("doc_topic_posterior")
 wfreq = pyro.param("word_freqs_posterior")
+batch_effects = pyro.param("batch_effects")
+type_effects = pyro.param("type_effects")
 # Output signature breakdown with row names.
 pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
-   .to_csv("out-alive-no-bec-no-HIV.txt", sep="\t", header=False, float_format="%.5f")
-np.savetxt("wfreq-alive-no-bec-no-HIV.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
+   .to_csv("out-PMA-no-HIV.txt", sep="\t", header=False, float_format="%.5f")
+np.savetxt("wfreq-PMA-no-HIV.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
+np.savetxt("batch-effects-PMA-no-HIV.txt",
+      batch_effects.detach().cpu().numpy(), fmt="%.5f")
+np.savetxt("type-effects-PMA-no-HIV.txt",
+      type_effects.detach().cpu().numpy(), fmt="%.5f")

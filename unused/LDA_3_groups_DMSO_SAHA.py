@@ -15,12 +15,46 @@ import torch.nn.functional as F
 
 global K # Number of topics.
 global M # Number of batches.
-global N # Number of genes.
+global N # Number of types.
 global G # Number of genes.
 
 # Set the umber of topics now.
 K = 3
 
+DMSO = frozenset([
+      "P2449_N716.S503", "P2449_N716.S505", "P2449_N718.S503",
+      "P2449_N718.S505", "P2449_N719.S503", "P2449_N719.S505",
+      "P2449_N720.S503", "P2449_N720.S505", "P2449_N721.S503",
+      "P2449_N721.S505", "P2449_N722.S503", "P2449_N722.S505",
+      "P2449_N723.S502", "P2449_N723.S503", "P2449_N723.S505",
+      "P2449_N724.S502", "P2449_N724.S503", "P2449_N724.S505",
+      "P2449_N726.S502", "P2449_N726.S503", "P2449_N726.S505",
+      "P2449_N727.S502", "P2449_N727.S503", "P2449_N727.S505",
+      "P2449_N728.S502", "P2449_N728.S503", "P2449_N728.S505",
+      "P2449_N729.S502", "P2449_N729.S503", "P2449_N729.S505",
+      "P2458_N701.S515", "P2458_N701.S516", "P2458_N702.S515",
+      "P2458_N702.S516", "P2458_N703.S515", "P2458_N703.S516",
+      "P2458_N704.S515", "P2458_N704.S516", "P2458_N705.S515",
+      "P2458_N705.S516", "P2458_N706.S515", "P2458_N706.S516",
+      "P2458_N707.S513", "P2458_N707.S515", "P2458_N707.S516",
+      "P2458_N710.S513", "P2458_N710.S515", "P2458_N710.S516",
+      "P2458_N711.S513", "P2458_N711.S515", "P2458_N711.S516",
+      "P2458_N712.S513", "P2458_N712.S515", "P2458_N712.S516",
+      "P2458_N714.S513", "P2458_N714.S515", "P2458_N714.S516",
+      "P2458_N715.S515", "P2458_N715.S516", "P2769_N701.S506",
+      "P2769_N702.S506", "P2769_N703.S506", "P2769_N704.S506",
+      "P2769_N705.S506", "P2769_N706.S506", "P2769_N707.S505",
+      "P2769_N710.S505", "P2769_N711.S505", "P2769_N712.S505",
+      "P2769_N714.S505", "P2769_N715.S505", "P2770_N701.S517",
+      "P2770_N702.S517", "P2770_N703.S517", "P2770_N704.S517",
+      "P2770_N705.S517", "P2770_N706.S517", "P2770_N707.S516",
+      "P2770_N710.S516", "P2770_N711.S516", "P2770_N712.S516",
+      "P2770_N714.S516", "P2770_N715.S516", "P2771_N701.S506",
+      "P2771_N702.S506", "P2771_N703.S506", "P2771_N705.S506",
+      "P2771_N706.S506", "P2771_N707.S505", "P2771_N710.S505",
+      "P2771_N711.S505", "P2771_N712.S505", "P2771_N714.S505",
+      "P2771_N715.S505",
+])
 
 SAHA = frozenset([
       "P2449_N724.S508", "P2771_N707.S508", "P2449_N720.S510",
@@ -108,6 +142,16 @@ def model(data=None):
    # Split data over cell, batch, cell type and expresion.
    cell, batch, ctype, X = data
 
+   # Set global parameter.
+   batch_effects = pyro.param("batch_effects",
+         torch.ones(M-1, G).to(X.device),
+         constraint = torch.distributions.constraints.positive
+   )
+   type_effects = pyro.param("type_effects",
+         torch.ones(N-1, G).to(X.device),
+         constraint = torch.distributions.constraints.positive
+   )
+
    # Sample globals.
    with pyro.plate("topics", K):
       # Sample global frequencies of the topics.
@@ -134,6 +178,12 @@ def model(data=None):
       # Sampling a topic then a word is equivalent
       # to sampling a word from weighted frequencies.
       freqs = torch.mm(doc_topics, word_freqs)
+      # Apply batch effects.
+      batch_mat = torch.cat([torch.ones(1,G).to(X.device), batch_effects])
+      freqs *= torch.mm(F.one_hot(batch).float(), batch_mat)
+      # Apply type effects.
+      type_mat = torch.cat([torch.ones(1,G).to(X.device), type_effects])
+      freqs *= torch.mm(F.one_hot(ctype).float(), type_mat)
       # Sample word counts in document.
       data = pyro.sample(
             name = "g",
@@ -198,7 +248,7 @@ def sc_data(fname, device='cpu'):
       ignore_header = next(f)
       for line in f:
          cell, info, expr = parse(line.split())
-         if cell not in SAHA: continue
+         if cell not in (DMSO|SAHA): continue
          list_of_cells.append(cell)
          list_of_infos.append(info)
          list_of_exprs.append(torch.tensor(expr))
@@ -252,7 +302,13 @@ for step in range(7000):
 ###
 out = pyro.param("doc_topic_posterior")
 wfreq = pyro.param("word_freqs_posterior")
+batch_effects = pyro.param("batch_effects")
+type_effects = pyro.param("type_effects")
 # Output signature breakdown with row names.
 pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
-   .to_csv("out-SAHA-no-bec.txt", sep="\t", header=False, float_format="%.5f")
-np.savetxt("wfreq-SAHA-no-bec.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
+   .to_csv("out_DMSO_SAHA.txt", sep="\t", header=False, float_format="%.5f")
+np.savetxt("wfreq_DMSO_SAHA.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
+np.savetxt("batch_effects_DMSO_SAHA.txt",
+      batch_effects.detach().cpu().numpy(), fmt="%.5f")
+np.savetxt("type_effects_DMSO_SAHA.txt",
+      type_effects.detach().cpu().numpy(), fmt="%.5f")

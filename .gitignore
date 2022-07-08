@@ -1,6 +1,7 @@
 batch-effects-PMA.txt
 batch-effects-SAHA.txt
 decoys.txt
+docker/schiv_docker_image_available
 gencode.v38+HIV.idx
 out-alive-no-bec-no-HIV.txt
 out-PMA.txt

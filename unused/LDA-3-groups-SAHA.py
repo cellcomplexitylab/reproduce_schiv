@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 global K # Number of topics.
 global M # Number of batches.
-global N # Number of genes.
+global N # Number of types.
 global G # Number of genes.
 
 # Set the umber of topics now.
