@@ -1,8 +1,8 @@
 # Build and run as shown below.
 # docker build -t schiv .
-# docker run --rm -v $(pwd):/tmp -u$(id -u):$(id -g) schiv make
+# docker run --rm --gpus all -v $(pwd):/tmp -u$(id -u):$(id -g) schiv make
 
-FROM ubuntu:focal
+FROM nvidia/cuda:11.7.1-cudnn8-devel-ubuntu20.04
 
 RUN apt-get update -y
 RUN apt-get install -y wget
@@ -17,11 +17,11 @@ RUN apt-get install -y python3 python3-pip && apt-get clean && rm -rf /var/lib/a
 RUN ln /usr/bin/python3 /usr/bin/python
 
 # Install Pandas 
-RUN pip3 install pandas==1.2.4
+RUN pip3 install pandas
 
 # Install PyTorch and Pyro
-RUN pip3 install torch==1.9.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
-RUN pip3 install pyro-ppl==1.7.0
+RUN pip3 install torch
+RUN pip3 install pyro-ppl
 
 # Install R packages
 RUN R -e "install.packages('showtext', dependencies=TRUE)"
