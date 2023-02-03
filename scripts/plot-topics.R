@@ -1,8 +1,8 @@
 # Read input data from command line.
 args = commandArgs(trailingOnly=TRUE)
-input_fname = args[[1]]
-output_fname = args[[2]]
-swap = args[[3]]
+ref_fname = args[[1]]
+input_fname = args[[2]]
+output_fname = args[[3]]
 
 library(showtext)
 font_add(family="Avenir Medium", regular="Avenir-Medium.ttf")
@@ -10,8 +10,9 @@ font_add(family="Avenir Medium", regular="Avenir-Medium.ttf")
 plate_colors = c("#4a8337", "#6bac21", "#ddd48f", "#cda989", "#804012")
 names(plate_colors) = c("P2449", "P2458", "P2769", "P2770", "P2771")
 
-topics = as.matrix(read.table(input_fname, row.names=1))
-if (swap) topics = topics[,2:1]
+ref = read.delim(ref_fname, row.names=1)
+
+topics = as.matrix(read.table(input_fname))
 vals = array(rgamma(n=1000*length(topics), shape=topics),
    dim=c(nrow(topics),2,1000))
 sums = apply(X=vals, MARGIN=c(1,3), FUN=sum)
@@ -19,7 +20,7 @@ sums = apply(X=vals, MARGIN=c(1,3), FUN=sum)
 itvl = apply(X=vals[,1,]/sums, MARGIN=1, FUN=quantile, probs=c(.025,.975))
 
 # Gather plate info.
-plate = sub("_.*", "", rownames(topics))
+plate = sub("_.*", "", rownames(ref))
 
 pdf(output_fname, height=4, width=8 * nrow(topics) / 152)
 showtext_begin()

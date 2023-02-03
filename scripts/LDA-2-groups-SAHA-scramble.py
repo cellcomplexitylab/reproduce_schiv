@@ -1,5 +1,8 @@
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+
 import numpy as np
-import pandas as pd
+import random
 import re
 import sys
 
@@ -18,7 +21,10 @@ global G # Number of genes.
 # Set the umber of topics now.
 K = 2
 
-
+# Those are all Jurkat and J-LatA2 cells treated with SAHA,
+# including those that are dead. But the input data is only
+# the cells that are alive. The list below is used only for
+# filtering.
 SAHA = frozenset([
       "P2449_N724.S508", "P2771_N707.S508", "P2449_N720.S510",
       "P2769_N702.S508", "P2449_N721.S508", "P2771_N710.S507",
@@ -101,57 +107,30 @@ SAHA = frozenset([
       "P2449_N721.S510", "P2770_N705.S518", "P2769_N711.S506",
 ])
 
-
-class warmup_scheduler(torch.optim.lr_scheduler.ChainedScheduler):
-   def __init__(self, optimizer, warmup=100, decay=9500):
-      self.warmup = warmup
-      self.decay = decay
-      warmup = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor = 0.01,
-            end_factor = 1.,
-            total_iters = self.warmup
-      )
-      linear_decay = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor = 1.,
-            end_factor = 0.05,
-            total_iters=self.decay
-      )
-      super().__init__([warmup, linear_decay])
-
-
 def model(data=None):
    # Split data over cell, batch, cell type and expresion.
-   batch, ctype, X = data
+   cell, batch, ctype, X = data
 
-   # CUDA / CPU and FP16, FP32, FP64 compatibility
-   device = X.device
-   dtype = X.dtype
-
-   with pyro.plate("genes", G):
-      with pyro.plate("batches", M):
-         batch_effects = pyro.sample(
-               name = "batch_effects",
-               fn = dist.Normal(torch.zeros(1).to(device, dtype), .1)
-         ).unsqueeze(-3)
-      with pyro.plate("types", N):
-         type_effects = pyro.sample(
-               name = "type_effects",
-               fn = dist.Normal(torch.zeros(1).to(device, dtype), .1)
-         ).unsqueeze(-3)
-
-   one_over_K = torch.ones(1).to(device, dtype) / K
-   one_over_G = torch.ones(G).to(device, dtype) / G
+   # Set global parameter.
+   batch_effects = pyro.param("batch_effects",
+         torch.ones(M-1, G).to(X.device),
+         constraint = torch.distributions.constraints.positive
+   )
+   type_effects = pyro.param("type_effects",
+         torch.ones(N-1, G).to(X.device),
+         constraint = torch.distributions.constraints.positive
+   )
 
    # Sample globals.
    with pyro.plate("topics", K):
       # Sample global frequencies of the topics.
+      one_over_K = torch.ones(1).to(X.device) / K
       topic_weights = pyro.sample(
             name = "alpha",
-            fn = dist.Gamma(one_over_K, 1.)
-      ).unsqueeze(-2)
+            fn = dist.Gamma(one_over_K, 1)
+      )
       # Sample word frequencies by topic.
+      one_over_G = torch.ones(G).to(X.device) / G
       word_freqs = pyro.sample(
             name = "phi",
             fn = dist.Dirichlet(one_over_G)
@@ -163,17 +142,17 @@ def model(data=None):
       # Sample topic frequencies in document.
       doc_topics = pyro.sample(
             name = "theta",
-            fn = dist.Dirichlet(topic_weights),
+            fn = dist.Dirichlet(topic_weights)
       )
       # Sampling a topic then a word is equivalent
       # to sampling a word from weighted frequencies.
-      freqs = torch.matmul(doc_topics, word_freqs)
+      freqs = torch.mm(doc_topics, word_freqs)
       # Apply batch effects.
-      batch_mat = batch_effects.exp()
-      freqs *= torch.matmul(F.one_hot(batch.to(torch.int64)).to(device, dtype), batch_mat)
+      batch_mat = torch.cat([torch.ones(1,G).to(X.device), batch_effects])
+      freqs *= torch.mm(F.one_hot(batch).float(), batch_mat)
       # Apply type effects.
-      type_mat = type_effects.exp()
-      freqs *= torch.matmul(F.one_hot(ctype.to(torch.int64)).to(device, dtype), type_mat)
+      type_mat = torch.cat([torch.ones(1,G).to(X.device), type_effects])
+      freqs *= torch.mm(F.one_hot(ctype).float(), type_mat)
       # Sample word counts in document.
       data = pyro.sample(
             name = "g",
@@ -186,44 +165,19 @@ def model(data=None):
 
 def guide(data=None):
    # Split data over cell, batch, cell type and expresion.
-   batch, ctypes, X = data
-
-   # CUDA / CPU and FP16, FP32, FP64 compatibility
-   device = X.device
-   dtype = X.dtype
+   cell, batch, ctypes, X = data
 
    # Use a conjugate guide for global variables.
    topic_weights_posterior = pyro.param(
          "topic_weights_posterior",
-         lambda: torch.ones(K).to(device, dtype),
+         lambda: torch.ones(K, device=X.device),
          constraint = torch.distributions.constraints.positive
    )
    word_freqs_posterior = pyro.param(
          "word_freqs_posterior",
-         lambda: torch.ones(K, G).to(device, dtype),
-         constraint = torch.distributions.constraints.positive
+         lambda: torch.ones((K, G), device=X.device),
+         constraint = torch.distributions.constraints.greater_than(0.5)
    )
-
-   batch_effects_posterior = pyro.param(
-         "batch_effects_posterior",
-         lambda: torch.ones(M,G).to(device, dtype)
-   )
-   type_effects_posterior = pyro.param(
-         "type_effects_posterior",
-         lambda: torch.ones(N,G).to(device, dtype),
-   )
-
-   with pyro.plate("genes", G):
-      with pyro.plate("batches", M):
-         batch_effects = pyro.sample(
-               name = "batch_effects",
-               fn = dist.Normal(batch_effects_posterior, .02)
-         ).unsqueeze(-3)
-      with pyro.plate("types", N):
-         type_effects = pyro.sample(
-               name = "type_effects",
-               fn = dist.Normal(type_effects_posterior, .02)
-         ).unsqueeze(-3)
 
    with pyro.plate("topics", K):
       alpha = pyro.sample(
@@ -236,25 +190,23 @@ def guide(data=None):
       )
 
    ndocs = X.shape[0]
-   doc_topics_posterior = pyro.param(
+   doc_topics = pyro.param(
          "doc_topic_posterior",
-         lambda: torch.ones(ndocs,K).to(device, dtype),
+         lambda: torch.ones((ndocs, K), device = X.device),
          constraint = torch.distributions.constraints.greater_than(0.5)
    )
    with pyro.plate("documents", ndocs):
       pyro.sample(
             name = "theta",
-            fn = dist.Dirichlet(doc_topics_posterior)
-      )
+            fn = dist.Dirichlet(doc_topics)
+   )
 
 
-def sc_data(fname, device="cuda", dtype=torch.float64):
-   """ 
-   Data for single-cell transcriptome, returns a 4-tuple with
-      1. a list of cell identifiers,
-      2. a tensor of batches as integers,
-      3. a tensor of cell type
-      4. a tensor with read counts.
+def sc_data(fname, device='cpu'):
+   """
+   Data for single-cell transcriptome, returns a 3-tuple with a tensor
+   of batches as integers, a tensor of cell type and a tensor with read
+   counts.
    """
    list_of_cells = list()
    list_of_infos = list()
@@ -277,68 +229,55 @@ def sc_data(fname, device="cuda", dtype=torch.float64):
    list_of_ctypes = [re.sub(r"\+.*", "", x) for x in list_of_infos]
    unique_ctypes = sorted(list(set(list_of_ctypes)))
    list_of_ctype_ids = [unique_ctypes.index(x) for x in list_of_ctypes]
-   # Return the (cells, batches, types, expressions) tuple.§
-   batch_tensor = torch.tensor(list_of_batch_ids).to(device, dtype)
-   ctype_tensor = torch.tensor(list_of_ctype_ids).to(device, dtype)
-   expr_tensor = torch.stack(list_of_exprs).to(device, dtype)
+   # Return the (cells, batches, types, expressions) tuple.
+   batch_tensor = torch.tensor(list_of_batch_ids).to(device)
+   ctype_tensor = torch.tensor(list_of_ctype_ids).to(device)
+   expr_tensor = torch.stack(list_of_exprs).to(device)
    return list_of_cells, batch_tensor, ctype_tensor, expr_tensor
 
 
 data = sc_data('alivecells.tsv')
 
-pyro.clear_param_store()
-torch.manual_seed(123)
-pyro.set_rng_seed(123)
-
 # Set global dimensions.
 cells, batches, ctypes, X = data
-M = int(batches.max() + 1)
-N = int(ctypes.max() + 1)
-G = int(X.shape[-1])
-data = batches, ctypes, X
+M = batches.max() + 1
+N = ctypes.max() + 1
+G = X.shape[-1]
 
-pyro.clear_param_store()
-
-scheduler = pyro.optim.PyroLRScheduler(
-      scheduler_constructor = warmup_scheduler,
-      optim_args = {
-         "optimizer": torch.optim.AdamW,
-         "optim_args": {"lr": 0.01}, "warmup": 400, "decay": 9600,
-      },
-      clip_args = {"clip_norm": 5.}
-)
-
-
-svi = pyro.infer.SVI(
-         model = model,
-         guide = guide,
-         optim = scheduler,
-         loss = pyro.infer.JitTrace_ELBO(
-            num_particles = 25,
-            vectorize_particles = True,
-            max_plate_nesting = 2
-         )
-      )
-
-loss = 0.
-for step in range(10000):
-   loss += svi.step((batches, ctypes, X))
-   scheduler.step()
-   if (step+1) % 500 == 0:
-      sys.stderr.write("iter {}: loss = {:.2f}\n".format(step+1, loss / 1e9))
-      loss = 0.
+# Run 210 repetitions where HIV is shuffled.
+# The first 10 are not shuffled.
+# The next 100 are shuffled by plate (but within cell type).
+# The next 100 are shuffled globally (still within cell type).
+for iterno in range(210):
+   if iterno > 109:
+      # Shuffle HIV globally (updates X in place).
+      for ctype in range(N):
+         idx, = torch.where(ctypes == ctype)
+         X[idx,-1] = X[idx[torch.randperm(len(idx))],-1]
+   elif iterno > 9:
+      # Shuffle HIV by plate (updates X in place).
+      for batch in range(M):
+         for ctype in range(N):
+            idx, = torch.where((batches == batch) & (ctypes == ctype))
+            X[idx,-1] = X[idx[torch.randperm(len(idx))],-1]
+   pyro.clear_param_store()
+   optimizer = torch.optim.AdamW
+   scheduler = pyro.optim.PyroLRScheduler(
+         scheduler_constructor = torch.optim.lr_scheduler.ExponentialLR,
+         optim_args = {'optimizer': optimizer, 'optim_args': {'lr': 0.01}, 'gamma': 0.1},
+         clip_args = {'clip_norm': 5.}
+   )
+   svi = pyro.infer.SVI(model, guide, scheduler,
+         loss=pyro.infer.Trace_ELBO())
 
 
-###
-out = pyro.param("doc_topic_posterior")
-wfreq = pyro.param("word_freqs_posterior")
-batch_effects_posterior = pyro.param("batch_effects_posterior")
-type_effects_posterior = pyro.param("type_effects_posterior")
-# Output signature breakdown with row names.
-pd.DataFrame(out.detach().cpu().numpy(), index=cells) \
-   .to_csv("out-SAHA-2.txt", sep="\t", header=False, float_format="%.5f")
-np.savetxt("wfreq-SAHA-2.txt", wfreq.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("batch-effects-SAHA-2.txt",
-      batch_effects_posterior.detach().cpu().numpy(), fmt="%.5f")
-np.savetxt("type-effects-SAHA-2.txt",
-      type_effects_posterior.detach().cpu().numpy(), fmt="%.5f")
+   loss = 0.
+   for step in range(8000):
+      loss += svi.step(data)
+      if (step+1) % 500 == 0:
+         sys.stdout.write("{}\t{}\t{:.3f}\n".format(iterno+1, step+1, loss / 1e9))
+         loss = 0.
+      if (step+1) % 6000 == 0:
+         scheduler.step()
+      if (step+1) % 7000 == 0:
+         scheduler.step()
