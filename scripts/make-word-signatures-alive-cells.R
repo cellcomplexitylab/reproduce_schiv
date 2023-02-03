@@ -6,7 +6,7 @@ out = out[,c(1,3,2)]
 wfreq = wfreq[c(1,3,2),] # SAHA, DMSO, PMA
 
 # Get gene names (without version).
-genes = read.delim("data/gene_annotations.tsv")
+genes = read.delim("data/gene_annotations.tsv.gz")
 genes$gene_id = gsub("\\.[0-9]*", "", genes$gene_id)
 cells = read.delim("alivecells.tsv", row.names=1)
 gene_id = colnames(cells)[-c(1,ncol(cells))]

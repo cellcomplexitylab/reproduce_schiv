@@ -90,7 +90,7 @@ write(top_PMA_names, ncol=1, file="PMA_up_gene_ids.txt")
 #write(bot_PMA, ncol=1, file="PMA_dn_gene_ids.txt")
 
 # Write the weight files for https://www.wordclouds.com/
-genes = read.delim("data/gene_annotations.tsv")
+genes = read.delim("data/gene_annotations.tsv.gz")
 genes$gene_id = gsub("\\.[0-9]*", "", genes$gene_id)
 names_SAHA = genes$gene_symbol[match(top_SAHA_names, genes$gene_id)]
 names_PMA = genes$gene_symbol[match(top_PMA_names, genes$gene_id)]
@@ -103,8 +103,12 @@ write.table(P, sep=",", quote=FALSE, row.names=FALSE, col.names=FALSE,
    file="PMA_weights.csv")
 
 
-SAHA.response = SAHA.response = t(t(SAHA) - DMSO_x)
+SAHA.response = t(t(SAHA) - DMSO_x)
 SAHA.response = SAHA.response %*% SAHA_v
+SAHA_to_file = data.frame(cell=rownames(cells)[type %in% c(5,6)],
+   response=SAHA.response)
+write.table(SAHA_to_file, file="SAHA_response.txt", sep="\t",
+   quote=FALSE, row.names=FALSE)
 
 HIV.response = expr[type %in% c(5,6),ncol(expr)]
 
@@ -120,7 +124,7 @@ points(SAHA.response, 100*HIV.response, pch=19, cex=.8,
 
 axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
-title(xlab="Strength of the SAHA signature (a.u.)", line=2, col.lab="gray30",
+title(xlab="Strength of the response to SAHA (a.u.)", line=2, col.lab="gray30",
       family="Avenir Medium")
 title(ylab="Reads in GFP-nef (%)", line=2, col.lab="gray30",
       family="Avenir Medium")
@@ -157,8 +161,12 @@ showtext_end()
 dev.off()
 
 
-PMA.response = PMA.response = t(t(PMA) - DMSO_x)
+PMA.response = t(t(PMA) - DMSO_x)
 PMA.response = PMA.response %*% PMA_v
+PMA_to_file = data.frame(cell=rownames(cells)[type %in% c(3,4)],
+   response=PMA.response)
+write.table(PMA_to_file, file="PMA_response.txt", sep="\t",
+   quote=FALSE, row.names=FALSE)
 
 HIV.response = expr[type %in% c(3,4),ncol(expr)]
 
@@ -174,7 +182,7 @@ points(PMA.response, 100*HIV.response, pch=19, cex=.8,
 
 axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20")
-title(xlab="Strength of the PMA signature (a.u.)", line=2, col.lab="gray30",
+title(xlab="Strength of the response to PMA (a.u.)", line=2, col.lab="gray30",
       family="Avenir Medium")
 title(ylab="Reads in GFP-nef (%)", line=2, col.lab="gray30",
       family="Avenir Medium")

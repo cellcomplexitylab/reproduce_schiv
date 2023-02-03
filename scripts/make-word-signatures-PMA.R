@@ -3,7 +3,7 @@ wfreq = as.matrix(read.table("wfreq-PMA.txt"))
 # HIV signature is already first.
 
 # Get gene names.
-genes = read.delim("data/gene_annotations.tsv")
+genes = read.delim("data/gene_annotations.tsv.gz")
 genes$gene_id = gsub("\\.[0-9]*", "", genes$gene_id)
 cells = read.delim("alivecells.tsv", row.names=1)
 gene_id = colnames(cells)[-1]

@@ -9,4 +9,4 @@ schiv_docker_image_available:
 	fi fi
 
 clean:
-	rm schiv_docker_image_available && docker rmi schiv
+	rm schiv_docker_image_available && docker rmi -f schiv gui11aume/schiv
