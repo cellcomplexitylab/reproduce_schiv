@@ -71,17 +71,18 @@ def model(data=None, generate=0):
    # --------------------------------------------------------------
    
       with pyro.plate("GxK", G):
-         # Departure expression from the baseline (see below).
-         # The 5-th and 95-th quantiles are 0.4 and 2.3, meaning
-         # that about 5% of the genes have a 5-fold difference
-         # between signatures. The 1-st and 99-th quantiles are 0.3
-         # and 3.2, or a 10-fold difference for 1% of the genes.
+         # Departure expression from the baseline (see below) in
+         # each signature. The 5-th and 95-th quantiles are 0.4 and
+         # 2.3, meaning that about 5% of the genes have a 5-fold
+         # difference between signatures. The 1-st and 99-th
+         # quantiles are 0.3 and 3.2, or a 10-fold difference for
+         # 1% of the genes.
          g = pyro.sample(
             name = "g",
             # dim: G x K | .
             fn = dist.LogNormal(
                .0 * torch.zeros(G,K).to(device, dtype),
-               .5 * torch.ones(G,K).to(device, dtype)
+               .3 * torch.ones(G,K).to(device, dtype)
             )
          )
 
@@ -119,7 +120,7 @@ def model(data=None, generate=0):
                # dim: B x G | .
                fn = dist.LogNormal(
                   .0 * torch.zeros(1,1).to(device, dtype),
-                  .2 * torch.ones(1,1).to(device, dtype)
+                  .3 * torch.ones(1,1).to(device, dtype)
                )
             )
             one_hot = F.one_hot(batch.to(torch.int64)).to(device, dtype)
@@ -135,7 +136,7 @@ def model(data=None, generate=0):
                # dim: N x G | .
                fn = dist.LogNormal(
                   .0 * torch.zeros(1,1).to(device, dtype),
-                  .4 * torch.ones(1,1).to(device, dtype)
+                  .3 * torch.ones(1,1).to(device, dtype)
                )
             )
             one_hot = F.one_hot(ctype.to(torch.int64)).to(device, dtype)
@@ -194,7 +195,7 @@ def model(data=None, generate=0):
             total_count = r,
             probs = p,
             gate = pi
-        ).to_event(1),
+         ).to_event(1),
          obs = X
       )
 
@@ -269,8 +270,13 @@ def guide(data=None, generate=0):
       )
 
       # Uncertainty around 'b' and 't'.
-      posterior_bt_scale = pyro.param(
-            "posterior_bt_scale",
+      posterior_b_scale = pyro.param(
+            "posterior_b_scale",
+            lambda: torch.ones(1,G).to(device, dtype),
+            constraint = torch.distributions.constraints.positive
+      )
+      posterior_t_scale = pyro.param(
+            "posterior_t_scale",
             lambda: torch.ones(1,G).to(device, dtype),
             constraint = torch.distributions.constraints.positive
       )
@@ -287,7 +293,7 @@ def guide(data=None, generate=0):
                # dim: B x G | .
                fn = dist.LogNormal(
                   posterior_b_loc,
-                  posterior_bt_scale
+                  posterior_b_scale
                )
             )
 
@@ -303,7 +309,7 @@ def guide(data=None, generate=0):
                # dim: N x G | .
                fn = dist.LogNormal(
                   posterior_t_loc,
-                  posterior_bt_scale
+                  posterior_t_scale
                )
             )
 
@@ -463,7 +469,8 @@ if __name__ == "__main__":
    names = (
       "posterior_pi_0", "posterior_pi_1",
       "posterior_s_loc", "posterior_s_scale",
-      "posterior_b_loc", "posterior_t_loc", "posterior_bt_scale",
+      "posterior_b_loc", "posterior_b_scale",
+      "posterior_t_loc", "posterior_t_scale",
       "posterior_baseline", "posterior_g_loc", "posterior_g_scale",
       "posterior_c_loc", "posterior_c_scale",
       "posterior_alpha", "posterior_theta")
