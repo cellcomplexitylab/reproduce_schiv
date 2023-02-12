@@ -1,4 +1,4 @@
-SCHIV= --rm -v $$(pwd):/tmp -u$$(id -u):$$(id -g) schiv
+SCHIV= --rm -v $$(pwd):/tmp -u$$(id -u):$$(id -g) --privileged schiv
 all:
 	echo "select target"
 
@@ -35,7 +35,7 @@ barplot-GO-SAHA.pdf: DAVID_SAHA.txt
 	docker run $(SCHIV) Rscript scripts/show-GO.R $< $@
 # File DAVID_PMA.txt is generated manually from the DAVID web site.
 barplot-GO-PMA.pdf: DAVID_PMA.txt
-	docker run $(SCHIV)  Rscript scripts/show-GO.R $< $@
+	docker run $(SCHIV) Rscript scripts/show-GO.R $< $@
 
 # Perform BB and LDA with 3 groups (without HIV).
 K3_BB.pt: cells_wo_HIV.tsv 

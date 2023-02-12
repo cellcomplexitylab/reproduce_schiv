@@ -14,8 +14,7 @@ plate = sub("_.*", "", rownames(cells))
 X = as.matrix(cells)[,-1]
 MTCO1 = X[,4634]
 
-# Gather plate info.
-smpl = as.matrix(read.table(input_fname, row.names=1))
+smpl = as.matrix(read.table(input_fname))
 
 pdf(output_fname)
 showtext_begin()
@@ -28,7 +27,7 @@ for (i in 1:nrow(smpl)) {
    points(smpl[i,], i+rnorm(sd=.05, n=1000), pch=".",
    col=plate_colors[plate[i]])
 }
-points(MTCO1, 1:length(MTCO1), pch=19, cex=.5)
+points(MTCO1, 1:length(MTCO1), pch=19, cex=.5, col="gray15")
 
 axis(side=1, col="gray30", cex.axis=.8, padj=-.9, col.axis="gray20")
 axis(side=2, col="gray30", cex.axis=.8, padj= .9, col.axis="gray20",
