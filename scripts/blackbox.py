@@ -35,144 +35,117 @@ class warmup_scheduler(torch.optim.lr_scheduler.ChainedScheduler):
 
 
 def model(data, generate=0):
+
    batch, ctype, X = data
    device = "cuda" if X is None else X.device
    dtype = torch.float64 if X is None else X.dtype
    ncells = X.shape[0] if X is not None else generate
 
+   # dim: ncells x B
+   one_hot_batch = F.one_hot(batch.to(torch.int64)).to(device, dtype)
+
    # Zero-inflation factor, 'pi'. The median is set
    # at 0.15, with 5% that 'pi' is less than 0.01 and
    # 5% that 'pi' is more than 50%.
    pi = pyro.sample(
-         # dim: 1 | .
+         # dim: 1 x 1 x 1 | .
          name = "pi",
          fn = dist.Beta(
-            1. * torch.ones(1).to(device, dtype),
-            4. * torch.ones(1).to(device, dtype)
+            1. * torch.ones(1,1,1).to(device, dtype),
+            4. * torch.ones(1,1,1).to(device, dtype)
          )
    )
 
    # Variance-to-mean model. Variance is modelled as
-   # 's * u^ss', where 'u' is mean gene expression and
-   # 's' and 'ss' are trained parameters. 's' has 90%
-   # chance of being in the interval (1.5,15) and 'ss'
-   # has 90% chance of being in the interval (0.4,2.3).
-   ss = pyro.sample(
-      name = "ss",
-      # dim: 1 | .
-      fn = dist.LogNormal(
-         .0 * torch.zeros(1).to(device, dtype),
-         .5 * torch.ones(1).to(device, dtype)
-      )
-   )
-
+   # 's * u', where 'u' is mean gene expression and
+   # 's' is a trained parameters with 90% chance of
+   # being in the interval (1.5,15).
    s = 1. + pyro.sample(
-      name = "s",
-      # dim: 1 | .
-      fn = dist.LogNormal(
-         1.0 * torch.ones(1).to(device, dtype),
-         0.5 * torch.ones(1).to(device, dtype)
-      )
+         name = "s",
+         # dim: 1 x 1 x 1 | .
+         fn = dist.LogNormal(
+            1.0 * torch.ones(1,1,1).to(device, dtype),
+            0.5 * torch.ones(1,1,1).to(device, dtype)
+         )
    )
 
    with pyro.plate("G", G):
 
       # Batch effects (mixed) on every gene. The 'loc'
       # hyper parameter has 90% chance of being in the
-      # interval (-5,5), i.e., from 0 to 150 reads.
+      # interval (-4,6), i.e., from 0 to 400 reads.
       # The 'scale' hyper parameter has 90% chance of
-      # being below 0.08, meaning that batch effects
-      # are expected to be up to 25% for 99% of genes.
-      hyper_b_loc = pyro.sample(
-         name = "hyper_b_loc",
-         # dim: 1 x G | .
-         fn = dist.Normal(
-            1 * torch.ones(1,G).to(device, dtype),
-            1 * torch.ones(1,G).to(device, dtype)
-         )
+      # being below 0.16, meaning that batch effects
+      # are expected to be up to 50% for 99% of genes.
+      h1_b_loc = pyro.sample(
+            name = "h1_b_loc",
+            # dim: 1 x 1 x G | .
+            fn = dist.Normal(
+               1 * torch.ones(1,1,1).to(device, dtype),
+               3 * torch.ones(1,1,1).to(device, dtype)
+            )
       )
-      hyper_b_scale = pyro.sample(
-         name = "hyper_b_scale",
-         # dim: 1 x G | .
-         fn = dist.HalfNormal(
-            0.05 * torch.ones(1,G).to(device, dtype)
-         )
-      )
-
-      # Cell type effects (mixed) on every gene. The
-      # 'scale' hyper parameter has 90% chance of
-      # being below 0.16, meaning that differences
-      # between cell types are expected to be up to
-      # 50% for 99% of genes.
-      hyper_t_scale = pyro.sample(
-         name = "hyper_t_scale",
-         # dim: 1 x G | .
-         fn = dist.HalfNormal(
-            0.1 * torch.ones(1,G).to(device, dtype)
-         )
+      h1_b_scale = pyro.sample(
+            name = "h1_b_scale",
+            # dim: 1 x 1 x G | .
+            fn = dist.HalfNormal(
+               0.1 * torch.ones(1,1,1).to(device, dtype)
+            )
       )
 
       # Gene modules (mixed). The 'scale' hyper
-      # parameter has 90% chance of being below 0.823,
+      # parameter has 90% chance of being below 0.082,
       # meaning that differences between modules are
       # expected to be up to 25% for 99% of genes.
-      hyper_g_scale = pyro.sample(
-         name = "hyper_g_scale",
-         # dim: 1 x G | .
-         fn = dist.HalfNormal(
-            0.05 * torch.ones(1,G).to(device, dtype)
-         )
+      h2_g_scale = pyro.sample(
+            name = "h2_g_scale",
+            # dim: 1 x 1 x G | .
+            fn = dist.HalfNormal(
+               0.05 * torch.ones(1,1,1).to(device, dtype)
+            )
       )
-
-      with pyro.plate("BxG", B):
-         # Batch effect (mixed). See hyper parameters.
-         bmat = pyro.sample(
-            name = "bmat",
-            # dim: B x G | .
-            fn = dist.Normal(
-               hyper_b_loc,
-               hyper_b_scale
-            )
-         )
-         # Assign baseline based on batch (multiply
-         # 'bmat' with a one-hot encoding of the
-         # batches).
-         # dim: ncells x B
-         one_hot = F.one_hot(batch.to(torch.int64)).to(device, dtype)
-         # dim: ncells x G
-         baseline = torch.matmul(one_hot, bmat)
-
-      with pyro.plate("NxG", N):
-         # Cell type effects (mixed). See hyper parameters.
-         tmat = pyro.sample(
-            name = "tmat",
-            # dim: N x G | .
-            fn = dist.Normal(
-               torch.zeros(1,G).to(device, dtype),
-               hyper_t_scale
-            )
-         )
-         # Assign cell type effects (multiply 'tmat'
-         # with a one-hot encoding of the batches).
-         # By definition, the average must be 0.
-         # dim: ncells x N
-         one_hot = F.one_hot(ctype.to(torch.int64)).to(device, dtype)
-         # dim: ncells x G
-         # DEBUG
-         #cfx = torch.matmul(one_hot, tmat)
-         cfx = 0
-
 
       with pyro.plate("KxG", K):
          # Gene modules (mixed). See hyper parameters.
-         g = pyro.sample(
-               name = "g",
-               # dim: K x G | .
+         h1_g_loc = pyro.sample(
+               name = "h1_g_loc",
+               # dim: 1 x K x G | .
                fn = dist.Normal(
-                  torch.zeros(1,1).to(device, dtype),
-                  hyper_g_scale
+                  torch.zeros(1,1,1).to(device, dtype),
+                  h2_g_scale # dim: 1 x 1 x G
                )
          )
+
+         with pyro.plate("BxKxG", B):
+            # Batch effect (mixed). See hyper parameters.
+            bmat = pyro.sample(
+                  name = "bmat",
+                  # dim: B x K x G | .
+                  fn = dist.Normal(
+                     h1_b_loc,  # dim 1 x 1 x G
+                     h1_b_scale # dim 1 x 1 x G
+                  )
+            )
+            # Assign baselines (multiply 'bmat' with a one-hot
+            # encoding of the batches). Dimension K is only a
+            # duplication on the singleton dimension. It is
+            # dropped in the 'einsum' below.
+            # dim: ncells x G
+            baselines = torch.einsum("ai,...ixb->...ab", one_hot_batch, bmat)
+
+            # Gene modules (mixed). See hyper parameters.
+            gmat = pyro.sample(
+                  name = "gmat",
+                  # dim: B x K x G | .
+                  fn = dist.Normal(
+                     h1_g_loc, # dim: 1 x K x G
+                     0.01 * torch.ones(1,1,1).to(device, dtype),
+                  )
+            )
+            # Assign signatures (multiply 'gmat' with a
+            # one-hot encoding of the batches).
+            # dim: K x ncells x G
+            sig = torch.einsum("ai,...ibc->...bac", one_hot_batch, gmat)
 
    with pyro.plate("K", K):
       # Expected proportion of modules, 'alpha'. This
@@ -181,22 +154,17 @@ def model(data, generate=0):
       # completely-absent types of splits.
       alpha = pyro.sample(
             name = "alpha",
-            # dim: K | .
-            fn = dist.Gamma(torch.ones(K).to(device, dtype) / K, 1)
-      ).unsqueeze(-2)
-   
-   # --------------------------------------------------------------
-   # The 'unsqueeze()' statement is essential. It allows the output
-   # to have one extra dimension on the "left" of the event.
-   # --------------------------------------------------------------
+            # dim: 1 x 1 x K | .
+            fn = dist.Gamma(torch.ones(1,1,K).to(device, dtype) / K, 1)
+      )
 
-   with pyro.plate("cells", ncells):
+   with pyro.plate("ncells", ncells):
       # Sample module frequencies in cells. This is
       # the usual sampling for topic modeling.
       theta = pyro.sample(
             name = "theta",
-            # dim: ncells x 1 | K
-            fn = dist.Dirichlet(alpha)
+            # dim: 1 x 1 x ncells | K
+            fn = dist.Dirichlet(alpha.unsqueeze(-4))
       )
 
    # ----------------------------------------------------------------
@@ -206,33 +174,51 @@ def model(data, generate=0):
    # shape and causes a mismatch between the model and the guide.
    # ----------------------------------------------------------------
 
-      # Relative read count per cell, 'c'. The prior is chosen
-      # so that the median is 1 with a 5% chance that 'c' is
-      # less than 0.5 and a 5% chance that it is more than 5.
-      c = pyro.sample(
-            name = "c",
-            # dim: ncells | .
+      # dim: ncells x G
+      tuning = torch.einsum("...xyai,...iab->...ab", theta, sig)
+
+      # Relative read count per cell, 'shift'. The prior is
+      # chosen so that the median is 1 with a 5% chance that 'c'
+      # is less than 0.5 and a 5% chance that it is more than 5.
+      shift = pyro.sample(
+            name = "shift",
+            # dim: 1 x 1 x ncells | .
             fn = dist.Normal(
-               0. * torch.zeros(1).to(device, dtype),
-               1. * torch.ones(1).to(device, dtype)
+               0. * torch.zeros(1,1,1).to(device, dtype),
+               1. * torch.ones(1,1,1).to(device, dtype)
             )
       )
 
-      # dim: ncells x G
-      lmbd = torch.matmul(theta, g)
+      # Change the dimension to dim: ncells x 1.
+      shift = shift.squeeze().unsqueeze(-1)
 
-      # dim: ncells x G
-      u = torch.exp(baseline + cfx + lmbd + c.unsqueeze(-1))
+   # ----------------------------------------------------------------
+   # This seems odd, right? Two dimensions are added on the left of
+   # 'ncells' to make it explicit that 'pyro.sample()' adds dummy
+   # dimensions to every tensor. Implicit batching like particles is
+   # added to the left. Squeezing pops the two singleton dimensions
+   # and unsqueezing adds a dimension to the right. The result is
+   # congruent whether implicit batching is added or not.
+   # ----------------------------------------------------------------
+
+      # dim: 1 x ncells x G
+      u = torch.exp(shift + baselines + tuning).unsqueeze(-3)
 
       # Variance and parameters of the negative binomial.
       # Parameter 'u' is the average number of reads and
-      # the variance is 's x u^ss'. Parametrize 'r' and
-      # 'p' as a function of 'u', 's' and 'ss'. Parameter
-      # 'u' has dimensions ncells x G, 'ss' has dimension
-      # 1 and 's' has dimension  1 x G (the result has
-      # dimension ncells x G).
-      p_ = 1. - 1. / (s*u**(ss-1))
-      r_ = u / (s*u**(ss-1) - 1)
+      # the variance is 's x u'. Parametrize 'r' and 'p'
+      # as a function of 'u' and 's'. Parameter 'u' has
+      # dimensions ncells x G and 's' has dimension 1
+      # (the result has dimension ncells x G).
+      p_ = 1. - 1. / s # dim:          1
+      r_ = u / (s - 1) # dim: ncells x G
+
+   # ----------------------------------------------------------------
+   # If the variance is assumed to vary with a power 'a', i.e. the
+   # variance is 's x u^a', then the equations above become:
+   # p_ = 1. - 1. / (s*u^(a-1))
+   # r_ = u / (s*u^(a-1) - 1)
+   # ----------------------------------------------------------------
 
       # Make sure that parameters of the ZINB are valid.
       eps = 1e-6
@@ -242,17 +228,18 @@ def model(data, generate=0):
       # Observations are sampled from a ZINB distribution.
       return pyro.sample(
             name = "X",
-            # dim: ncells x G | .
+            # dim: ncells | G
             fn = dist.ZeroInflatedNegativeBinomial(
-               total_count = r,
-               probs = p,
-               gate = pi
+               total_count = r, # dim: ncells x G
+               probs = p,       # dim:          1
+               gate = pi        # dim:          1
             ).to_event(1),
             obs = X
       )
 
 
 def guide(data=None, generate=0):
+
    batch, ctype, X = data
    device = "cuda" if X is None else X.device
    dtype = torch.float64 if X is None else X.dtype
@@ -260,240 +247,208 @@ def guide(data=None, generate=0):
 
    # Posterior distribution of 'pi'.
    posterior_pi_0 = pyro.param(
-         "posterior_pi_0",
-         lambda: 1. * torch.ones(1).to(device, dtype),
+         "posterior_pi_0", # dim: 1 x 1 x 1
+         lambda: 1. * torch.ones(1,1,1).to(device, dtype),
          constraint = torch.distributions.constraints.positive
    )
    posterior_pi_1 = pyro.param(
-         "posterior_pi_1",
-         lambda: 6. * torch.ones(1).to(device, dtype),
+         "posterior_pi_1", # dim: 1 x 1 x 1
+         lambda: 4. * torch.ones(1,1,1).to(device, dtype),
          constraint = torch.distributions.constraints.positive
    )
    posterior_pi = pyro.sample(
          name = "pi",
+         # dim: 1 x 1 x 1 | .
          fn = dist.Beta(
-            posterior_pi_0,
-            posterior_pi_1
+            posterior_pi_0, # dim: 1 x 1 x 1
+            posterior_pi_1  # dim: 1 x 1 x 1
          )
-   )
-
-   # Posterior distribution of 'ss'.
-   posterior_ss_loc = pyro.param(
-         "posterior_ss_loc",
-         lambda: .0 * torch.ones(1).to(device, dtype)
-   )
-   posterior_ss_scale = pyro.param(
-         "posterior_ss_scale",
-         lambda: .5 * torch.ones(1).to(device, dtype),
-         constraint = torch.distributions.constraints.positive
-   )
-   pyro.sample(
-      name = "ss",
-      # dim: 1 | .
-      fn = dist.LogNormal(
-         posterior_ss_loc,
-         posterior_ss_scale
-      )
    )
 
    # Posterior distribution of 's'.
    posterior_s_loc = pyro.param(
-         "posterior_s_loc",
-         lambda: torch.ones(1).to(device, dtype)
+         "posterior_s_loc", # dim: 1 x 1 x 1
+         lambda: torch.ones(1,1,1).to(device, dtype)
    )
    posterior_s_scale = pyro.param(
-         "posterior_s_scale",
-         lambda: torch.ones(1).to(device, dtype),
+         "posterior_s_scale", # dim: 1 x 1 x 1
+         lambda: torch.ones(1,1,1).to(device, dtype),
          constraint = torch.distributions.constraints.positive
    )
    pyro.sample(
       name = "s",
-      # dim: 1 | .
+      # dim: 1 x 1 x 1 | .
       fn = dist.LogNormal(
-         posterior_s_loc,
-         posterior_s_scale
+         posterior_s_loc,  # dim: 1 x 1 x 1
+         posterior_s_scale # dim: 1 x 1 x 1
       )
    )
 
    with pyro.plate("G", G):
-      # Posterior distribution of 'hyper_b_loc'.
-      posterior_hyper_b_loc_loc = pyro.param(
-            "posterior_hyper_b_loc_loc",
-            lambda: 3 * torch.ones(1,G).to(device, dtype)
+
+      # Posterior distribution of 'h1_b_loc'.
+      posterior_h1_b_loc_loc = pyro.param(
+            "posterior_h1_b_loc_loc",
+            lambda: 1 * torch.ones(1,1,G).to(device, dtype)
       )
-      posterior_hyper_b_loc_scale = pyro.param(
-            "posterior_hyper_b_loc_scale",
-            lambda: 1 * torch.ones(1,G).to(device, dtype),
+      posterior_h1_b_loc_scale = pyro.param(
+            "posterior_h1_b_loc_scale",
+            lambda: 3 * torch.ones(1,1,G).to(device, dtype),
             constraint = torch.distributions.constraints.positive
       )
       pyro.sample(
-            name = "hyper_b_loc",
-            # dim: 1 x G | .
+            name = "h1_b_loc",
+            # dim: 1 x 1 x G | .
             fn = dist.Normal(
-               posterior_hyper_b_loc_loc,
-               posterior_hyper_b_loc_scale
+               posterior_h1_b_loc_loc,  # dim: 1 x 1 x G
+               posterior_h1_b_loc_scale # dim: 1 x 1 x G
             )
       )
-      # Posterior distribution of 'hyper_b_scale'.
-      posterior_hyper_b_scale_loc = pyro.param(
-            "posterior_hyper_b_scale_loc",
-            lambda: 1 * torch.ones(1,G).to(device, dtype)
+
+      # Posterior distribution of 'h1_b_scale'.
+      posterior_h1_b_scale_loc = pyro.param(
+            "posterior_h1_b_scale_loc",
+            lambda: -2.7 * torch.ones(1,G).to(device, dtype)
       )
-      posterior_hyper_b_scale_scale = pyro.param(
-            "posterior_hyper_b_scale_scale",
-            lambda: 1 * torch.ones(1,G).to(device, dtype),
+      posterior_h1_b_scale_scale = pyro.param(
+            "posterior_h1_b_scale_scale",
+            lambda: 0.6 * torch.ones(1,G).to(device, dtype),
             constraint = torch.distributions.constraints.positive
       )
       pyro.sample(
-            name = "hyper_b_scale",
-            # dim: 1 x G | .
+            name = "h1_b_scale",
+            # dim: 1 x 1 x G | .
             fn = dist.LogNormal(
-               posterior_hyper_b_scale_loc,
-               posterior_hyper_b_scale_scale
+               posterior_h1_b_scale_loc,  # dim: 1 x 1 x G
+               posterior_h1_b_scale_scale # dim: 1 x 1 x G
             )
       )
 
-      # Posterior distribution of 'hyper_g_scale'.
-      posterior_hyper_g_scale_loc = pyro.param(
-            "posterior_hyper_g_scale_loc",
-            lambda: torch.zeros(1,G).to(device, dtype)
+      # Posterior distribution of 'h2_g_scale'.
+      posterior_h2_g_scale_loc = pyro.param(
+            "posterior_h2_g_scale_loc",
+            lambda: -3.4 * torch.ones(1,1,G).to(device, dtype)
       )
-      posterior_hyper_g_scale_scale = pyro.param(
-            "posterior_hyper_g_scale_scale",
-            lambda: 1 * torch.ones(1,G).to(device, dtype),
+      posterior_h2_g_scale_scale = pyro.param(
+            "posterior_h2_g_scale_scale",
+            lambda: 0.5 * torch.ones(1,1,G).to(device, dtype),
             constraint = torch.distributions.constraints.positive
       )
       pyro.sample(
-            name = "hyper_g_scale",
-            # dim: 1 x G | .
+            name = "h2_g_scale",
+            # dim: 1 x 1 x G | .
             fn = dist.LogNormal(
-               posterior_hyper_g_scale_loc,
-               posterior_hyper_g_scale_scale
+               posterior_h2_g_scale_loc,  # dim: 1 x 1 x G
+               posterior_h2_g_scale_scale # dim: 1 x 1 x G
             )
       )
 
-      # Posterior distribution of 'hyper_t_scale'.
-      posterior_hyper_t_scale_loc = pyro.param(
-            "posterior_hyper_t_scale_loc",
-            lambda: torch.zeros(1,G).to(device, dtype)
-      )
-      posterior_hyper_t_scale_scale = pyro.param(
-            "posterior_hyper_t_scale_scale",
-            lambda: 0.1 * torch.ones(1,G).to(device, dtype),
-            constraint = torch.distributions.constraints.positive
-      )
-      pyro.sample(
-            name = "hyper_t_scale",
-            # dim: 1 x G | .
-            fn = dist.LogNormal(
-               posterior_hyper_t_scale_loc,
-               posterior_hyper_t_scale_scale
-            )
-      )
-
-      with pyro.plate("BxG", B):
-         # Posterior distribution of 'b'.
-         posterior_b_loc = pyro.param(
-               "posterior_b_loc",
-               lambda: torch.zeros(B,G).to(device, dtype)
-         )
-         posterior_b_scale = pyro.param(
-               "posterior_b_scale",
-               lambda: torch.ones(B,G).to(device, dtype),
-               constraint = torch.distributions.constraints.positive
-         )
-         pyro.sample(
-               name = "bmat",
-               # dim: B x G | .
-               fn = dist.Normal(
-                  posterior_b_loc,
-                  posterior_b_scale
-               )
-         )
-
-      with pyro.plate("NxG", N):
-         # Posterior distribution of 't'.
-         posterior_t_loc = pyro.param(
-               "posterior_t_loc",
-               lambda: torch.zeros(N,G).to(device, dtype)
-         )
-         posterior_t_scale = pyro.param(
-               "posterior_t_scale",
-               lambda: torch.ones(N,G).to(device, dtype),
-               constraint = torch.distributions.constraints.positive
-         )
-         pyro.sample(
-            name = "tmat",
-            # dim: N x G | .
-            fn = dist.Normal(
-               posterior_t_loc,
-               posterior_t_scale
-            )
-         )
       with pyro.plate("KxG", K):
-         # Posterior distribution of 'g'.
-         posterior_g_loc = pyro.param(
-               "posterior_g_loc",
-               lambda: torch.zeros(K,G).to(device, dtype),
+
+         # Posterior distribution of 'h1_g_loc'.
+         posterior_h1_g_loc_loc = pyro.param(
+               "posterior_h1_g_loc_loc",
+               lambda: -3.4 * torch.ones(1,K,G).to(device, dtype)
          )
-         posterior_g_scale = pyro.param(
-               "posterior_g_scale",
-               lambda: torch.ones(K,G).to(device, dtype),
+         posterior_h1_g_loc_scale = pyro.param(
+               "posterior_h1_g_loc_scale",
+               lambda: 0.5 * torch.ones(1,K,G).to(device, dtype),
                constraint = torch.distributions.constraints.positive
          )
-         g = pyro.sample(
-               name = "g",
-               # dim: K x G | .
-               fn = dist.Normal(
-                  posterior_g_loc,
-                  posterior_g_scale
+         pyro.sample(
+               name = "h1_g_loc",
+               # dim: 1 x K x G | .
+               fn = dist.LogNormal(
+                  posterior_h1_g_loc_loc,  # dim: 1 x K x G
+                  posterior_h1_g_loc_scale # dim: 1 x K x G
                )
          )
+
+         with pyro.plate("BxKxG", B):
+
+            # Posterior distribution of 'bmat'.
+            posterior_b_loc = pyro.param(
+                  "posterior_b_loc",
+                  lambda: torch.ones(B,1,G).to(device, dtype)
+            )
+            posterior_b_scale = pyro.param(
+                  "posterior_b_scale",
+                  lambda: torch.ones(B,1,G).to(device, dtype),
+                  constraint = torch.distributions.constraints.positive
+            )
+            pyro.sample(
+                  name = "bmat",
+                  # dim: B x K x G | .
+                  fn = dist.Normal(
+                     posterior_b_loc,  # dim: B x 1 x G
+                     posterior_b_scale # dim: B x 1 x G
+                  )
+            )
+
+            # Posterior distribution of 'gmat'.
+            posterior_g_loc = pyro.param(
+                  "posterior_g_loc",
+                  lambda: torch.zeros(B,K,G).to(device, dtype),
+            )
+            posterior_g_scale = pyro.param(
+                  "posterior_g_scale",
+                  lambda: 0.2 * torch.ones(B,K,G).to(device, dtype),
+                  constraint = torch.distributions.constraints.positive
+            )
+            pyro.sample(
+                  name = "gmat",
+                  # dim: B x K x G | .
+                  fn = dist.Normal(
+                     posterior_g_loc,  # dim: B x K x G
+                     posterior_g_scale # dim: B x K x G
+                  )
+            )
 
    with pyro.plate("K", K):
       # Posterior distribution of 'alpha'.
       posterior_alpha = pyro.param(
             "posterior_alpha",
-            lambda: torch.ones(K).to(device, dtype) / K,
+            lambda: torch.ones(1,1,K).to(device, dtype) / K,
             constraint = torch.distributions.constraints.positive
       )
       alpha = pyro.sample(
             name = "alpha",
-            # dim: K | .
+            # dim: 1 x 1 x K | .
             fn = dist.Gamma(posterior_alpha, 1)
       )
 
-   with pyro.plate("cells", ncells):
+   with pyro.plate("ncells", ncells):
       # Posterior distribution of 'theta'.
       posterior_theta = pyro.param(
             "posterior_theta",
-            lambda: torch.ones(ncells,K).to(device, dtype),
+            lambda: torch.ones(1,1,ncells,K).to(device, dtype),
             constraint = torch.distributions.constraints.greater_than(0.5)
       )
       theta = pyro.sample(
             name = "theta",
-            # dim: 1 x ncells | K
+            # dim: 1 x 1 x ncells | K
             fn = dist.Dirichlet(posterior_theta)
       )
 
-      # Posterior distribution of 'c'.
+      # Posterior distribution of 'shift'.
       posterior_c_loc = pyro.param(
             "posterior_c_loc",
-            lambda: 1. * torch.zeros(ncells).to(device, dtype),
+            lambda: 1. * torch.zeros(1,ncells).to(device, dtype),
       )
       posterior_c_scale = pyro.param(
             "posterior_c_scale",
-            lambda: 1. * torch.ones(ncells).to(device, dtype),
+            lambda: 1. * torch.ones(1,ncells).to(device, dtype),
             constraint = torch.distributions.constraints.positive
       )
-      c = pyro.sample(
-            name = "c",
+      pyro.sample(
+            name = "shift",
             # dim: ncells
             fn = dist.Normal(
-               posterior_c_loc,
-               posterior_c_scale
+               posterior_c_loc,  # dim: 1 x ncells
+               posterior_c_scale # dim: 1 x ncells
             )
       )
+
 
 def sc_data(fname, device="cuda", dtype=torch.float64):
    """ 
@@ -506,7 +461,7 @@ def sc_data(fname, device="cuda", dtype=torch.float64):
    list_of_cells = list()
    list_of_infos = list()
    list_of_exprs = list()
-   # Convenience parsing function.
+   # Parsing function.
    parse = lambda row: (row[0], row[1], [round(float(x)) for x in row[2:]])
    with open(fname) as f:
       ignore_header = next(f)
@@ -527,6 +482,7 @@ def sc_data(fname, device="cuda", dtype=torch.float64):
    ctype_tensor = torch.tensor(list_of_ctype_ids).to(device)
    expr_tensor = torch.stack(list_of_exprs).to(device, dtype)
    return list_of_cells, batch_tensor, ctype_tensor, expr_tensor
+
 
 if __name__ == "__main__":
 
@@ -557,10 +513,11 @@ if __name__ == "__main__":
       model = model,
       guide = guide,
       optim = scheduler,
-      loss = pyro.infer.JitTrace_ELBO(
-         num_particles = 4,
+#      loss = pyro.infer.JitTrace_ELBO(
+      loss = pyro.infer.Trace_ELBO(
+         num_particles = 8,
          vectorize_particles = True,
-         max_plate_nesting = 2
+         max_plate_nesting = 3
       )
    )
 
@@ -585,23 +542,21 @@ if __name__ == "__main__":
       loss += svi.step(data)
       scheduler.step()
       if (step+1) % 500 == 0:
-         sys.stderr.write(f"iter {step+1}: loss = {round(loss/1e9,2)}\n")
+         sys.stderr.write(f"iter {step+1}: loss = {round(loss/1e9,3)}\n")
          loss = 0.
 
    # Model parameters.
    names = (
       "posterior_pi_0", "posterior_pi_1",
       "posterior_s_loc", "posterior_s_scale",
-      "posterior_ss_loc", "posterior_ss_scale",
       "posterior_b_loc", "posterior_b_scale",
       "posterior_c_loc", "posterior_c_scale",
       "posterior_g_loc", "posterior_g_scale",
-      "posterior_t_loc", "posterior_t_scale",
       "posterior_alpha", "posterior_theta",
-      "posterior_hyper_b_loc_loc", "posterior_hyper_b_loc_scale",
-      "posterior_hyper_b_scale_loc", "posterior_hyper_b_scale_scale",
-      "posterior_hyper_g_scale_loc", "posterior_hyper_g_scale_scale",
-      "posterior_hyper_t_scale_loc", "posterior_hyper_t_scale_scale",
+      "posterior_h1_b_loc_loc", "posterior_h1_b_loc_scale",
+      "posterior_h1_b_scale_loc", "posterior_h1_b_scale_scale",
+      "posterior_h2_g_scale_loc", "posterior_h2_g_scale_scale",
+      "posterior_h1_g_loc_loc", "posterior_h1_g_loc_scale",
    )
    params = { name: pyro.param(name).detach().cpu() for name in names }
    torch.save({"params":params}, out_fname)
@@ -611,7 +566,8 @@ if __name__ == "__main__":
          model = model,
          guide = guide,
          num_samples = 1000,
-         return_sites = ("theta", "g", "_RETURN"),
+         #parallel = True,
+         return_sites = ("theta", "_RETURN"),
    )
    sim = predictive(data=(batches, ctypes, None), generate=X.shape[0])
    # Resample the full transcriptome for each cell.
