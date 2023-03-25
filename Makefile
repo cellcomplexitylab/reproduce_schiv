@@ -19,8 +19,6 @@ alivecells.tsv: allcells.tsv
 	docker run $(SCHIV) Rscript scripts/make-alive-cells.R
 
 # Create cell subsets.
-alivecells_no_HIV.tsv: alivecells.tsv
-	docker run $(SCHIV) true && awk -v OFS="\t" "NF{NF-=1};1" $< > $@
 alivecells_SAHA.tsv: alivecells.tsv
 	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R SAHA $@
 alivecells_PMA.tsv: alivecells.tsv
@@ -31,7 +29,8 @@ aliveJLat_SAHA.tsv: alivecells.tsv
 	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R J-LatA2+SAHA $@
 aliveJLat_PMA.tsv: alivecells.tsv
 	docker run $(SCHIV)  Rscript scripts/filter_alive_cells.R J-LatA2+PMA $@
-aliveJLat_no_HIV.tsv: aliveJLat.tsv
+# Remove HIV (e.g., alivecells_no_HIV.tsv).
+%_no_HIV.tsv: %.tsv
 	docker run $(SCHIV) true && awk -v OFS="\t" "NF{NF-=1};1" $< > $@
 
 # Plot PCA with alive cells only.
@@ -46,114 +45,46 @@ barplot-GO-PMA.pdf: DAVID_PMA.txt
 	docker run $(SCHIV) Rscript scripts/show-GO.R $< $@
 
 # Perform BB and LDA with 3 groups (without HIV).
-K3_BB.pt: alivecells_no_HIV.tsv
-	docker run --gpus all $(SCHIV) python scripts/blackbox.py 3 $< $@
 K3_LDA.pt: alivecells_no_HIV.tsv
 	docker run --gpus all $(SCHIV) python scripts/lda.py 3 $< $@
+K3_BB.pt: alivecells_no_HIV.tsv
+	docker run --gpus all $(SCHIV) python scripts/blackbox.py 3 $< $@
+K2_SB.pt: alivecells.tsv
+	docker run --gpus all $(SCHIV) python scripts/splitbox.py 2 $< $@
 
-# Plot module simplex.
-K3_posterior_theta_BB.tsv: K3_BB.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param post_theta
-K3_posterior_theta_LDA.tsv: K3_LDA.pt
+# Plot module simplexes.
+K3_post_theta_LDA.tsv: K3_LDA.pt
 	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param doc_topic_posterior
-simplex_BB.pdf: K3_posterior_theta_BB.tsv alivecells_no_HIV.tsv
+K3_post_theta_BB.tsv: K3_BB.pt
+	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param post_theta_loc
+simplex_LDA.pdf: K3_post_theta_LDA.tsv alivecells_no_HIV.tsv
 	docker run $(SCHIV) Rscript scripts/plot_simplex.R $^ $@
-simplex_LDA.pdf: K3_posterior_theta_LDA.tsv alivecells_no_HIV.tsv
+simplex_BB.pdf: K3_post_theta_BB.tsv alivecells_no_HIV.tsv
+	docker run $(SCHIV) Rscript scripts/plot_simplex.R $^ $@
+# This need a bit of work here. <====
+xxx.tsv: out.pt
+	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param post_theta_loc
+yyy_simplex.pdf: yyy.tsv alivecells.tsv
 	docker run $(SCHIV) Rscript scripts/plot_simplex.R $^ $@
 
-# Plot signature vs HIV <==== NEED TO WORK ON THAT BIT.
-hello.pdf: K3_posterior_theta_BB.tsv
-	docker run $(SCHIV) Rscript scripts/plot_signature_vs_HIV.R $< $@
-
-
-# Posterior predictive of MT-CO1 (most expressed gene).
-MTCO1_BB.tsv: K3_BB.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ gene_sample 4633
+# Posterior check for MT-CO1 (most expressed gene).
 MTCO1_LDA.tsv: K3_LDA.pt
 	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ gene_sample 4633
-posterior_predictive_MTCO1_BB.pdf: alivecells_no_HIV.tsv MTCO1_BB.tsv
+MTCO1_BB.tsv: K3_BB.pt
+	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ gene_sample 4633
+post_check_MTCO1_BB.pdf: alivecells_no_HIV.tsv MTCO1_BB.tsv
 	docker run $(SCHIV) Rscript scripts/plot-MTCO1.R $^ $@
-posterior_predictive_MTCO1_LDA.pdf: alivecells_no_HIV.tsv MTCO1_LDA.tsv
+post_check_MTCO1_LDA.pdf: alivecells_no_HIV.tsv MTCO1_LDA.tsv
 	docker run $(SCHIV) Rscript scripts/plot-MTCO1.R $^ $@
-
-
-# Perform BB for separate treatments with 2 groups...
-K2_SAHA.pt: alivecells_SAHA.tsv
-	docker run --gpus all $(SCHIV) python scripts/blackbox.py 2 $< $@
-K2_PMA.pt: alivecells_PMA.tsv 
-	docker run --gpus all $(SCHIV) python scripts/blackbox.py 2 $< $@
-# ... and with 3 groups.
-K3_SAHA.pt: alivecells_SAHA.tsv 
-	docker run --gpus all $(SCHIV) python scripts/blackbox.py 3 $< $@
-K3_PMA.pt: alivecells_PMA.tsv 
-	docker run --gpus all $(SCHIV) python scripts/blackbox.py 3 $< $@
-K3_SAHA_posterior_theta.tsv: K3_SAHA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param post_theta
-K3_PMA_posterior_theta.tsv: K3_PMA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param post_theta
-
-
-# Posterior predictive of HIV
-K2_HIV_SAHA_BB.tsv: K2_SAHA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ gene_sample 4951
-posterior_predictive_K2_HIV_SAHA_BB.pdf: K2_HIV_SAHA_BB.tsv alivecells_SAHA.tsv
-	docker run $(SCHIV) Rscript scripts/plot_HIV.R $^ $@
-K2_HIV_PMA_BB.tsv: K2_PMA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ gene_sample 4951
-posterior_predictive_K2_HIV_PMA_BB.pdf: K2_HIV_PMA_BB.tsv alivecells_PMA.tsv
-	docker run $(SCHIV) Rscript scripts/plot_HIV.R $^ $@
-K3_HIV_SAHA_BB.tsv: K3_SAHA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ gene_sample 4951
-posterior_predictive_K3_HIV_SAHA_BB.pdf: K3_HIV_SAHA_BB.tsv alivecells_SAHA.tsv
-	docker run $(SCHIV) Rscript scripts/plot_HIV.R $^ $@
-K3_HIV_PMA_BB.tsv: K3_PMA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ gene_sample 4951
-posterior_predictive_K3_HIV_PMA_BB.pdf: K3_HIV_PMA_BB.tsv alivecells_PMA.tsv
-	docker run $(SCHIV) Rscript scripts/plot_HIV.R $^ $@
-
-
-## Plot representation of drug signatures.
-#bargraph-alive-cells-topics-no-bec-no-HIV.pdf simplex-topics-alive-cells-no-bec-no-HIV.pdf SAHA-signature-vs-HIV.pdf PMA-signature-vs-HIV.pdf: alivecells.tsv out-alive-no-bec-no-HIV.txt
-#	$(DOCKER_CPU) Rscript scripts/plot-topics-alive-cells.R
-
-# Print genes in signatures for pathway analysis.
-#PMA-weights.csv SAHA-weights.csv DMSO-weights.csv PMA-gene_ids.txt SAHA-gene_ids.txt DMSO-gene_ids.txt: data/gene_annotations.tsv alivecells.tsv wfreq-alive-no-bec-no-HIV.txt
-#	$(DOCKER_CPU) Rscript scripts/make-word-signatures-alive-cells.R
-
-## The files SAHA-DAVID.txt and PMA-DAVID.txt are generated
-## manually from the DAVID web site.
-#PMA-GO.txt SAHA-GO.txt barplot-GO-PMA.pdf barplot-GO-SAHA.pdf: SAHA-DAVID.txt PMA-DAVID.txt
-#	$(DOCKER_CPU) Rscript scripts/show-GO.R
-
-
-# Distribution of the LDA modules.
-K2_SAHA_posterior_theta_BB.tsv: K2_SAHA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param posterior_theta
-K2_PMA_posterior_theta_BB.tsv: K2_PMA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param posterior_theta
-bargraph-modules-SAHA.pdf: K2_SAHA_posterior_theta_BB.tsv
-	docker run $(SCHIV) Rscript scripts/plot-topics.R aliveJLat_SAHA.tsv $< $@
-bargraph-modules-PMA.pdf: K2_PMA_posterior_theta_BB.tsv
-	docker run $(SCHIV) Rscript scripts/plot-topics.R aliveJLat_PMA.tsv $< $@
-
 
 # Module profiles.
-K2_posterior_g_SAHA.tsv: K2_SAHA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param_av posterior_g_loc
-K2_posterior_g_PMA.tsv: K2_PMA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param_av posterior_g_loc
-K3_posterior_g_SAHA.tsv: K3_SAHA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param_av posterior_g_loc
-K3_posterior_g_PMA.tsv: K3_PMA.pt
-	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param_av posterior_g_loc
-K2_modules_SAHA: K2_posterior_g_SAHA.tsv
-	docker run $(SCHIV) Rscript scripts/print_modules.R $< $@
-K2_modules_PMA: K2_posterior_g_PMA.tsv
-	docker run $(SCHIV) Rscript scripts/print_modules.R $< $@
-K3_modules_PMA: K3_posterior_g_PMA.tsv
-	docker run $(SCHIV) Rscript scripts/print_modules.R $< $@
-K3_modules_SAHA: K3_posterior_g_SAHA.tsv
-	docker run $(SCHIV) Rscript scripts/print_modules.R $< $@
+K2_SB_post_mod.tsv: K2_SB.pt
+	docker run $(SCHIV) python scripts/extract_blackbox.py $< $@ param post_mod_loc
+
+# Show / print module profiles.
+K2_SB_modules: K2_SB_posterior_mod.tsv
+	docker run $(SCHIV) Rscript scripts/show_modules.R $<
+
 
 ################################
 

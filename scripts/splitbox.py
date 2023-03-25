@@ -42,9 +42,9 @@ class ZeroInflatedNegativeBinomial(dist.ZeroInflatedNegativeBinomial):
 
 
 class warmup_scheduler(torch.optim.lr_scheduler.ChainedScheduler):
-   def __init__(self, optimizer, warmup=100, decay=4500):
+   def __init__(self, optimizer, warmup=100, decay=None):
       self.warmup = warmup
-      self.decay = decay
+      self.decay = decay if decay is not None else 100000000
       warmup = torch.optim.lr_scheduler.LinearLR(
             optimizer,
             start_factor=0.01,
@@ -62,7 +62,7 @@ class warmup_scheduler(torch.optim.lr_scheduler.ChainedScheduler):
 
 def model(data, generate=0):
 
-   batch, ctype, X = data
+   batch, ctype, X, mask = data
    device = "cuda" if X is None else X.device
    dtype = torch.float64 if X is None else X.dtype
    ncells = X.shape[0] if X is not None else generate
@@ -74,14 +74,14 @@ def model(data, generate=0):
 
    # Variance-to-mean model. Variance is modelled as
    # 's * u', where 'u' is mean gene expression and
-   # 's' is a trained parameters with 90% chance of
-   # being in the interval (1.5,15).
+   # 's' is a parameter with 90% chance of being in
+   # the interval 1 + (0.3, 225).
    s = 1. + pyro.sample(
          name = "s",
          # dim: 1 x 1 | .
          fn = dist.LogNormal(
-            1.0 * torch.ones(1,1).to(device, dtype),
-            0.5 * torch.ones(1,1).to(device, dtype)
+            2. * torch.ones(1,1).to(device, dtype),
+            2. * torch.ones(1,1).to(device, dtype)
          )
    )
 
@@ -95,19 +95,45 @@ def model(data, generate=0):
             1. * torch.ones(1,1).to(device, dtype),
             4. * torch.ones(1,1).to(device, dtype)
          )
-   )   
+   )
 
-   with pyro.plate("ncells", ncells):
+   with pyro.plate("2K+1", 2*K+1):
 
-      theta = pyro.sample(
-            name = "theta",
-            # dim(theta): K x ncells | .
-            fn = dist.Normal(
-               0 * torch.zeros(K,1).to(device, dtype),
-               1 * torch.ones(K,1).to(device, dtype)
+      # Module weight, indicating global proportion of each
+      # module in transcriptomes. This is the same prior as
+      # in the standard latent Dirichlet allocation.
+      mod_wgt = pyro.sample(
+            name = "mod_wgt",
+            # dim(mod_wgt): 1 x 2K+1
+            fn = dist.Gamma(
+               torch.ones(1,1).to(device, dtype) / (2*K+1),
+               torch.ones(1,1).to(device, dtype)
             )
       )
 
+      # dim(mod_wgt): 1 x 1 x 2K+1
+      mod_wgt = mod_wgt.unsqueeze(-2)
+
+   with pyro.plate("ncells", ncells):
+
+      # Proportion of the modules in given transcriptomes.
+      # This is the same hierarchic model as the standard
+      # latend Dirichlet allocation.
+      theta = pyro.sample(
+            name = "theta",
+            # dim(theta): 1 x ncells | 2K+1
+            fn = dist.Dirichlet(
+               mod_wgt # dim: 1 x 2K+1
+            )
+      )
+
+      # Correction for the total number of reads in the
+      # transcriptome. The shift in log space corresponds
+      # to a cell-specific scaling of all the genes of
+      # the transcriptome. In linear space, the median
+      # is 1 by design (average 0 in log space). In
+      # linear space, the scaling factor has a 90% chance
+      # of being in the window (0.2, 5).
       shift = pyro.sample(
             name = "shift",
             # dim(shift): 1 x ncells | .
@@ -124,21 +150,41 @@ def model(data, generate=0):
    # Per-gene sampling.
    with pyro.plate("G", G):
 
-      # Per-module sampling.
-      with pyro.plate("KxG", K):
-
-         # Modules / signatures.
-         mod = pyro.sample(
-               name = "mod",
-               # dim(modules): K x G
-               fn = dist.Normal(
-                  0.00 * torch.zeros(K,G).to(device, dtype),
-                  0.25 * torch.ones(1,1).to(device, dtype),
-               )
-         )
-
       # Dummy plate to fix rightmost shapes.
       with pyro.plate("1xG", 1):
+
+         #  | 1.00  0.99 | 0.00  0.00 |
+         #  | 0.99  1.00 | 0.00  0.00 |
+         #  ---------------------------
+         #  | 0.00  0.00 | 1.00  0.99 |
+         #  | 0.00  0.00 | 0.99  1.00 |
+         #    --  2  -- 
+         #    --------  K+1  --------
+
+         Q = (.99 * torch.ones(2,2)).fill_diagonal_(1.)
+         cor_2K = torch.block_diag(*([Q]*(K+1))).to(device, dtype)
+         mu_2K = torch.zeros(1,1,2*(K+1)).to(device, dtype)
+
+         # Remove the right-most state.
+         cor_2K = cor_2K[:-1,:-1]
+         mu_2K = mu_2K[:,:,:-1]
+
+         # The modules consist of K similar pairs, plus
+         # one module for reference. Modules are scalings
+         # over baseline gene expression, so the median
+         # is set to 1 by design. There is a 90% chance
+         # that the scaling is in the window (0.6, 1.5).
+         # For the paired modules, there is a 90% chance
+         # that the two values are within 10% of each
+         # other.
+         mod = pyro.sample(
+               name = "mod",
+               # dim(modules): 1 x G | 2K+1
+               fn = dist.MultivariateNormal(
+                  0.00 * mu_2K,
+                  0.25 * cor_2K
+               )
+         )
 
          # Matrix 'cor_NB' has the structure below.
          #  | 1.00  0.99 |  0.97  0.97 |
@@ -152,10 +198,13 @@ def model(data, generate=0):
          cor_NB = .97 + torch.block_diag(*([Q]*N)).to(device, dtype)
          mu_NB = torch.ones(1,1,N*B).to(device, dtype)
 
-         # Base expression on every gene. The
-         # base has 90% chance of being in the interval
-         # (-4,6), i.e., from 0 to 400 reads (many
-         # adjustments will apply, see below).
+         # Baseline expression on every gene. The base
+         # has 90% chance of being in the interval
+         # (-4,6), i.e., from 0 to 400 reads. Several
+         # adjustments apply, including the shift to
+         # correct for the total number of reads in
+         # the transcriptome of the cell and the modules
+         # that modify the expression of some genes.
          base = pyro.sample(
                name = "base",
                # dim(base): 1 x G | N*B
@@ -169,9 +218,9 @@ def model(data, generate=0):
          base = base.view(base.shape[:-1] + (N,B))
 
       # dim(mod_n): ncells x G
-      nprll = len(theta.shape) == 2 # (not run in parallel)
-      mod_n = torch.einsum("kn,kg->ng", theta, mod) if nprll else \
-              torch.einsum("...kn,...kg->...ng", theta, mod)
+      nprll = len(mod.shape) == 3 # (not run in parallel)
+      mod_n = torch.einsum("ygk,xnk->ng", mod, theta) if nprll else \
+              torch.einsum("...ygk,...xnk->...ng", mod, theta)
 
       # dim(base_n): ncells x G
       nprll = len(base.shape) == 4 # (not run in parallel)
@@ -213,13 +262,14 @@ def model(data, generate=0):
                   probs = p,       # dim:          1
                   gate = pi        # dim:          1
                ),
-               obs = X
+               obs = X,
+               obs_mask = mask
          )
 
 
 def guide(data=None, generate=0):
 
-   batch, ctype, X = data
+   batch, ctype, X, mask = data
    device = "cuda" if X is None else X.device
    dtype = torch.float64 if X is None else X.dtype
    ncells = X.shape[0] if X is not None else generate
@@ -227,11 +277,11 @@ def guide(data=None, generate=0):
    # Posterior distribution of 's'.
    post_s_loc = pyro.param(
          "post_s_loc", # dim: 1 x 1
-         lambda: 1 * torch.ones(1,1).to(device, dtype)
+         lambda: 2 * torch.ones(1,1).to(device, dtype)
    )
    post_s_scale = pyro.param(
          "post_s_scale", # dim: 1 x 1
-         lambda: 1 * torch.ones(1,1).to(device, dtype),
+         lambda: 2 * torch.ones(1,1).to(device, dtype),
          constraint = torch.distributions.constraints.positive
    )
    post_s = pyro.sample(
@@ -263,24 +313,36 @@ def guide(data=None, generate=0):
          )
    )
 
+   with pyro.plate("2K+1", 2*K+1):
+
+      post_mod_wgt = pyro.param(
+            "post_mod_wgt",
+            lambda: torch.ones(1,2*K+1).to(device, dtype),
+            constraint = torch.distributions.constraints.positive
+      )
+
+      mod_wgt = pyro.sample(
+            name = "mod_wgt",
+            # dim(mod_wgt): 1 x 2K+1
+            fn = dist.Gamma(
+               post_mod_wgt, # dim: 1 x 2*K+1
+               torch.ones(1,1).to(device, dtype)
+            )
+      )
+
    with pyro.plate("ncells", ncells):
 
       # Posterior distribution of 'theta'.
       post_theta_loc = pyro.param(
             "post_theta_loc",
-            lambda: 0 * torch.zeros(K,ncells).to(device, dtype),
-      )
-      post_theta_scale = pyro.param(
-            "post_theta_scale",
-            lambda: 1 * torch.ones(1,ncells).to(device, dtype),
-            constraint = torch.distributions.constraints.positive
+            lambda: torch.ones(1,ncells,2*K+1).to(device, dtype),
+            constraint = torch.distributions.constraints.greater_than(0.5)
       )
       post_theta = pyro.sample(
             name = "theta",
-            # dim(theta): K x ncells | .
-            fn = dist.Normal(
-               post_theta_loc,  # dim: K x ncells
-               post_theta_scale # dim: K x 1
+            # dim(theta): 1 x ncells | 2K+1
+            fn = dist.Dirichlet(
+               post_theta_loc # dim: 1 x ncells x 2K+1
             )
       )
 
@@ -305,29 +367,27 @@ def guide(data=None, generate=0):
 
    with pyro.plate("G", G):
 
-      with pyro.plate("KxG", K):
+      with pyro.plate("1xG", 1):
 
          # Posterior distribution of 'mod'.
          post_mod_loc = pyro.param(
                "post_mod_loc",
-               lambda: 0 * torch.zeros(K,G).to(device, dtype)
+               lambda: 0 * torch.zeros(1,G,2*K+1).to(device, dtype)
          )
          post_mod_scale = pyro.param(
                "post_mod_scale",
-               lambda: .25 * torch.ones(1,G).to(device, dtype),
+               lambda: .25 * torch.ones(1,G,2*K+1).to(device, dtype),
                constraint = torch.distributions.constraints.positive
          )
 
          post_mod = pyro.sample(
                name = "mod",
-               # dim: K x G
+               # dim: 1 x G | N (2K+1)
                fn = dist.Normal(
-                  post_mod_loc,  # dim: K x G
-                  post_mod_scale # dim: 1 x G
-               )
+                  post_mod_loc,  # dim: 1 x G x 2K+1
+                  post_mod_scale # dim: 1 x G x 2K+1
+               ).to_event(1)
          )
-
-      with pyro.plate("1xG", 1):
 
          # Posterior distribution of 'base'.
          post_base_loc = pyro.param(
@@ -343,10 +403,10 @@ def guide(data=None, generate=0):
          post_base = pyro.sample(
                name = "base",
                # dim: 1 x G | N*B
-               fn = dist.MultivariateNormal(
-                  post_base_loc,               # dim: 1 x G x N*B
-                  post_base_scale.diag_embed() # dim: 1 x G x N*B x N*B
-               )
+               fn = dist.Normal(
+                  post_base_loc,  # dim: 1 x G x N*B
+                  post_base_scale # dim: 1 x G x N*B
+               ).to_event(1)
          )
 
 
@@ -397,13 +457,17 @@ if __name__ == "__main__":
    data = sc_data(in_fname)
 
    cells, batches, ctypes, X = data
+   mask = torch.ones_like(X).to(dtype=torch.bool)
+   # Mask HSPA8 (idx 1236) and MT-ND4 (idx 4653).
+   mask[:,1236] = X[:,4653] = False
+   # Also mask HIV (last idx) in Jurkat only.
+   mask[ctypes == 1,-1] = False
+
    B = int(batches.max() + 1)
    N = int(ctypes.max() + 1)
    G = int(X.shape[-1])
 
-   # Mask HSPA8 and MT-ND4 (set to 0).
-   X[:,1236] = X[:,4653] = 0
-   data = batches, ctypes, X
+   data = batches, ctypes, X, mask
 
    scheduler = pyro.optim.PyroLRScheduler(
          scheduler_constructor = warmup_scheduler,
@@ -438,7 +502,7 @@ if __name__ == "__main__":
    names = (
       "post_s_loc", "post_s_scale",
       "post_pi_0", "post_pi_1",
-      "post_theta_loc", "post_theta_scale",
+      "post_mod_wgt", "post_theta_loc",
       "post_base_loc", "post_base_scale",
       "post_mod_loc", "post_mod_scale",
       "post_shift_loc", "post_shift_scale",
@@ -453,7 +517,7 @@ if __name__ == "__main__":
          num_samples = 1000,
          return_sites = ("theta", "_RETURN"),
    )
-   sim = predictive(data=(batches, ctypes, None), generate=X.shape[0])
+   sim = predictive(data=(batches, ctypes, None, mask), generate=X.shape[0])
    # Resample the full transcriptome for each cell.
    smpl = { "tx": sim["_RETURN"].detach().cpu() }
 
