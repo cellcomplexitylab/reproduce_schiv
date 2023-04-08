@@ -23,7 +23,7 @@ pyro.enable_validation(False)
 
 def model(data, generate=0):
 
-   batch, ctype, drugs, X, mask = data
+   batch, ctype, drugs, X = data
    device = "cuda" if X is None else X.device
    dtype = torch.float64 if X is None else X.dtype
    ncells = X.shape[0] if X is not None else generate
@@ -35,30 +35,6 @@ def model(data, generate=0):
    # dim(OH_D): ncells x N
    OH_D = F.one_hot(drugs.to(torch.int64)).to(device, dtype)
 
-   # Variance-to-mean model. Variance is modelled as
-   # 's * u', where 'u' is mean gene expression and
-   # 's' is a parameter with 90% chance of being in
-   # the interval 1 + (0.3, 225).
-   s = 1. + pyro.sample(
-         name = "s",
-         # dim: 1 x 1 | .
-         fn = dist.LogNormal(
-            2. * torch.ones(1,1).to(device, dtype),
-            2. * torch.ones(1,1).to(device, dtype)
-         )
-   )
-
-   # Zero-inflation factor, 'pi'. The median is set
-   # at 0.15, with 5% that 'pi' is less than 0.01 and
-   # 5% that 'pi' is more than 50%.
-   pi = pyro.sample(
-         # dim: 1 x 1 | .
-         name = "pi",
-         fn = dist.Beta(
-            1. * torch.ones(1,1).to(device, dtype),
-            4. * torch.ones(1,1).to(device, dtype)
-         )
-   )
 
    with pyro.plate("K", K):
 
@@ -76,39 +52,6 @@ def model(data, generate=0):
 
       # dim(mod_wgt): 1 x 1 x K
       mod_wgt = mod_wgt.unsqueeze(-2)
-
-
-   with pyro.plate("ncells", ncells):
-
-      # Proportion of the modules in given transcriptomes.
-      # This is the same hierarchic model as the standard
-      # latend Dirichlet allocation.
-      theta = pyro.sample(
-            name = "theta",
-            # dim(theta): 1 x ncells | K
-            fn = dist.Dirichlet(
-               mod_wgt # dim: 1 x 1 x K
-            )
-      )
-
-      # Correction for the total number of reads in the
-      # transcriptome. The shift in log space corresponds
-      # to a cell-specific scaling of all the genes of
-      # the transcriptome. In linear space, the median
-      # is 1 by design (average 0 in log space). In
-      # linear space, the scaling factor has a 90% chance
-      # of being in the window (0.2, 5).
-      shift = pyro.sample(
-            name = "shift",
-            # dim(shift): 1 x ncells | .
-            fn = dist.Normal(
-               0. * torch.zeros(1,1).to(device, dtype),
-               1. * torch.ones(1,1).to(device, dtype)
-            )
-      )
-
-      # dim(shift): ncells x 1
-      shift = shift.squeeze().unsqueeze(-1)
 
 
    # Per-gene sampling.
@@ -161,10 +104,7 @@ def model(data, generate=0):
          # Baseline expression on every gene. The base
          # has 90% chance of being in the interval
          # (-4,6), i.e., from 0 to 400 reads. Several
-         # adjustments apply, including the shift to
-         # correct for the total number of reads in
-         # the transcriptome of the cell and the modules
-         # that modify the expression of some genes.
+         # adjustments apply.
          base = pyro.sample(
                name = "base",
                # dim(base): 1 x G | N*B
@@ -177,6 +117,20 @@ def model(data, generate=0):
          # dim(base): 1 x G x N x B
          base = base.view(base.shape[:-1] + (N,B))
 
+
+   with pyro.plate("ncells", ncells):
+
+      # Proportion of the modules in given transcriptomes.
+      # This is the same hierarchic model as the standard
+      # latend Dirichlet allocation.
+      theta = pyro.sample(
+            name = "theta",
+            # dim(theta): 1 x ncells | K
+            fn = dist.Dirichlet(
+               mod_wgt # dim: 1 x 1 x K
+            )
+      )
+
       # dim(mod_n): ncells x G
       nprll = len(mod.shape) == 4 # (not run in parallel)
       mod_n = torch.einsum("ni,ygik,xnk->ng", OH_D, mod, theta) if nprll else \
@@ -188,93 +142,28 @@ def model(data, generate=0):
                torch.einsum("ni,...xgij,nj->...ng", OH_N, base, OH_B)
 
       # dim(u): ncells x G
-      u = torch.exp(base_n + mod_n + shift)
+      probs = torch.softmax(base_n + mod_n, dim=-1)
 
-      # Variance and parameters of the negative binomial.
-      # Parameter 'u' is the average number of reads and
-      # the variance is 's x u'. Parametrize 'r' and 'p'
-      # as a function of 'u' and 's'. Parameter 'u' has
-      # dimensions ncells x G and 's' has dimension 1
-      # (the result has dimension G x ncells).
-      p_ = 1. - 1. / s # dim(p_): 1
-      r_ = u / (s - 1) # dim(r_): 1 x G x ncells
+      # Observations are sampled from a ZINB distribution.
+      Y = pyro.sample(
+            name = "Y",
+            # dim(X): ncells x G
+            fn = dist.Multinomial(
+               probs = probs,
+               validate_args = False
+            ),
+            obs = X,
+      )
 
-   # ----------------------------------------------------------------
-   # If the variance is assumed to vary with a power 'a', i.e. the
-   # variance is 's x u^a', then the equations above become:
-   # p_ = 1. - 1. / (s*u^(a-1))
-   # r_ = u / (s*u^(a-1) - 1)
-   # ----------------------------------------------------------------
-
-      # Make sure that parameters of the ZINB are valid.
-      eps = 1e-6
-      p = torch.clamp(p_, min=0.+eps, max=1.-eps)
-      r = torch.clamp(r_, min=0.+eps)
-
-      with pyro.plate("ncellsxG", ncells):
-
-         # Observations are sampled from a ZINB distribution.
-         Y = pyro.sample(
-               name = "Y",
-               # dim(X): ncells x G
-               fn = ZeroInflatedNegativeBinomial(
-                  total_count = r, # dim: ncells x G
-                  probs = p,       # dim:          1
-                  gate = pi        # dim:          1
-               ),
-               obs = X,
-               obs_mask = mask
-         )
-
-   # Return sampled transcriptome and smooth log-estimate.
-   return torch.stack((Y, base_n + mod_n))
+   return probs
 
 
 def guide(data=None, generate=0):
 
-   batch, ctype, drugs, X, mask = data
+   batch, ctype, drugs, X = data
    device = "cuda" if X is None else X.device
    dtype = torch.float64 if X is None else X.dtype
    ncells = X.shape[0] if X is not None else generate
-
-   # Posterior distribution of 's'.
-   post_s_loc = pyro.param(
-         "post_s_loc", # dim: 1 x 1
-         lambda: 2 * torch.ones(1,1).to(device, dtype)
-   )
-   post_s_scale = pyro.param(
-         "post_s_scale", # dim: 1 x 1
-         lambda: 2 * torch.ones(1,1).to(device, dtype),
-         constraint = torch.distributions.constraints.positive
-   )
-   post_s = pyro.sample(
-         name = "s",
-         # dim: 1 x 1 x 1 | .
-         fn = dist.LogNormal(
-            post_s_loc,  # dim: 1 x 1
-            post_s_scale # dim: 1 x 1
-         )
-   )
-
-   # Posterior distribution of 'pi'.
-   post_pi_0 = pyro.param(
-         "post_pi_0", # dim: 1 x 1
-         lambda: 1. * torch.ones(1,1).to(device, dtype),
-         constraint = torch.distributions.constraints.positive
-   )
-   post_pi_1 = pyro.param(
-         "post_pi_1", # dim: 1 x 1
-         lambda: 4. * torch.ones(1,1).to(device, dtype),
-         constraint = torch.distributions.constraints.positive
-   )
-   post_pi = pyro.sample(
-         name = "pi",
-         # dim: 1 x 1 | .
-         fn = dist.Beta(
-            post_pi_0, # dim: 1 x 1
-            post_pi_1  # dim: 1 x 1
-         )
-   )
 
    with pyro.plate("K", K):
 
@@ -293,40 +182,6 @@ def guide(data=None, generate=0):
             )
       )
 
-   with pyro.plate("ncells", ncells):
-
-      # Posterior distribution of 'theta'.
-      post_theta_loc = pyro.param(
-            "post_theta_loc",
-            lambda: torch.ones(1,ncells,K).to(device, dtype),
-            constraint = torch.distributions.constraints.greater_than(0.5)
-      )
-      post_theta = pyro.sample(
-            name = "theta",
-            # dim(theta): 1 x ncells | K
-            fn = dist.Dirichlet(
-               post_theta_loc # dim: 1 x ncells x K
-            )
-      )
-
-      # Posterior distribution of 'shift'.
-      post_shift_loc = pyro.param(
-            "post_shift_loc",
-            lambda: 0 * torch.zeros(1,ncells).to(device, dtype),
-      )
-      post_shift_scale = pyro.param(
-            "post_shift_scale",
-            lambda: 1 * torch.ones(1,ncells).to(device, dtype),
-            constraint = torch.distributions.constraints.positive
-      )
-      post_shift = pyro.sample(
-            name = "shift",
-            # dim: 1 x ncells
-            fn = dist.Normal(
-               post_shift_loc,  # dim: 1 x ncells
-               post_shift_scale # dim: 1 x ncells
-            )
-      )
 
    with pyro.plate("G", G):
 
@@ -373,6 +228,23 @@ def guide(data=None, generate=0):
          )
 
 
+   with pyro.plate("ncells", ncells):
+
+      # Posterior distribution of 'theta'.
+      post_theta_loc = pyro.param(
+            "post_theta_loc",
+            lambda: torch.ones(1,ncells,K).to(device, dtype),
+            constraint = torch.distributions.constraints.greater_than(0.5)
+      )
+      post_theta = pyro.sample(
+            name = "theta",
+            # dim(theta): 1 x ncells | K
+            fn = dist.Dirichlet(
+               post_theta_loc # dim: 1 x ncells x K
+            )
+      )
+
+
 if __name__ == "__main__":
 
    pyro.set_rng_seed(123)
@@ -386,21 +258,13 @@ if __name__ == "__main__":
    data = sc_data(in_fname)
 
    cells, batches, ctypes, drugs, X = data
-   mask = torch.ones_like(X).to(dtype=torch.bool)
-   # HSPA8 and MT-ND4 show the strongest batch
-   # effects when considering SAHA and PMA
-   # treatments separately.
-   # Mask HSPA8 (idx 1236) and MT-ND4 (idx 4653).
-   # mask[:,1236] = X[:,4653] = False
-   # Mask HIV (last idx) in Jurkat cells only.
-   mask[ctypes == 1,-1] = False
 
    B = int(batches.max() + 1)
    N = int(ctypes.max() + 1)
    D = int(drugs.max() + 1)
    G = int(X.shape[-1])
 
-   data = batches, ctypes, drugs, X, mask
+   data = batches, ctypes, drugs, X
 
    scheduler = pyro.optim.PyroLRScheduler(
          scheduler_constructor = warmup_scheduler,
@@ -433,26 +297,40 @@ if __name__ == "__main__":
 
    # Model parameters.
    names = (
-      "post_s_loc", "post_s_scale",
-      "post_pi_0", "post_pi_1",
       "post_mod_wgt", "post_theta_loc",
       "post_base_loc", "post_base_scale",
       "post_mod_loc", "post_mod_scale",
-      "post_shift_loc", "post_shift_scale",
    )
    ready = lambda x: x.detach().cpu().squeeze()
    params = { name: ready(pyro.param(name)) for name in names }
+
 
    # Posterior predictive sampling.
    predictive = pyro.infer.Predictive(
          model = model,
          guide = guide,
          num_samples = 1000,
-         return_sites = ("theta", "mod", "base", "_RETURN"),
+         return_sites = ("_RETURN",),
    )
-   # Resample transcriptome (and smoothed version as well).
-   sim = predictive(data=(batches, ctypes, drugs, None, mask), generate=X.shape[0])
-   smpl = { "tx": sim["_RETURN"].detach().cpu() }
+   sim = predictive(data=(batches, ctypes, drugs, None), generate=X.shape[0])
+   # Resample the full transcriptome for each cell.
+   # This must be done manually because sampling from
+   # the multinomial is faulty when the counts are
+   # not constant.
+   probs = sim["_RETURN"].to("cpu") # Runs faster on CPU.
+   total_counts = X.sum(dim=1)
+   smpl = list()
+   for i in range(X.shape[0]):
+      smpl_i = list()
+      multinom = torch.distributions.Multinomial(
+            total_count = int(total_counts[i]),
+            probs = probs[:,i,:],
+            validate_args = True
+      )
+      with torch.no_grad():
+         smpl.append(multinom.sample([1]))
+   tx = torch.stack(smpl).transpose(0,1)
+   smpl = { "tx": tx.detach() }
 
    # Save model and posterior predictive samples.
    torch.save({"params":params, "smpl":smpl}, out_fname)

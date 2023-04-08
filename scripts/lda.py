@@ -7,29 +7,12 @@ import sys
 import torch
 import torch.nn.functional as F
 
-pyro.enable_validation(False)
+from local import warmup_scheduler, sc_data
 
 global K # Number of signatures.
 global G # Number of genes.
 
-
-class warmup_scheduler(torch.optim.lr_scheduler.ChainedScheduler):
-   def __init__(self, optimizer, warmup=100, decay=4500):
-      self.warmup = warmup
-      self.decay = decay
-      warmup = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=0.01,
-            end_factor=1.,
-            total_iters=self.warmup
-      )
-      linear_decay = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=1.,
-            end_factor=0.05,
-            total_iters=self.decay
-      )
-      super().__init__([warmup, linear_decay])
+pyro.enable_validation(False)
 
 
 def model(X=None, generate=0):
@@ -114,39 +97,6 @@ def guide(X=None, generate=0):
       )
 
 
-def sc_data(fname, device="cuda", dtype=torch.float64):
-   """ 
-   Data for single-cell transcriptome, returns a 3-tuple with
-      1. a list of cell identifiers,
-      2. a tensor of batches as integers,
-      3. a tensor of cell types as integers,
-      4. a tensor with read counts.
-   """
-   list_of_cells = list()
-   list_of_infos = list()
-   list_of_exprs = list()
-   # Convenience parsing function.
-   parse = lambda row: (row[0], row[1], [round(float(x)) for x in row[2:]])
-   with open(fname) as f:
-      ignore_header = next(f)
-      for line in f:
-         cell, info, expr = parse(line.split())
-         list_of_cells.append(cell)
-         list_of_infos.append(info)
-         list_of_exprs.append(torch.tensor(expr))
-   # Extract batch (plate) from cell ID.
-   list_of_plates = [re.sub(r"_.*", "", x) for x in list_of_cells]
-   unique_plates = list(set(list_of_plates))
-   list_of_batch_ids = [unique_plates.index(x) for x in list_of_plates]
-   # Extract cell type from treatment info.
-   list_of_ctypes = [re.sub(r"\+.*", "", x) for x in list_of_infos]
-   unique_ctypes = sorted(list(set(list_of_ctypes)))
-   list_of_ctype_ids = [unique_ctypes.index(x) for x in list_of_ctypes]
-   batch_tensor = torch.tensor(list_of_batch_ids).to(device, dtype)
-   ctype_tensor = torch.tensor(list_of_ctype_ids).to(device)
-   expr_tensor = torch.stack(list_of_exprs).to(device, dtype)
-   return list_of_cells, batch_tensor, ctype_tensor, expr_tensor
-
 if __name__ == "__main__":
 
    K = int(sys.argv[1])
@@ -177,7 +127,7 @@ if __name__ == "__main__":
       guide = guide,
       optim = scheduler,
       loss = pyro.infer.JitTrace_ELBO(
-         num_particles = 25,
+         num_particles = 16,
          vectorize_particles = True,
          max_plate_nesting = 2
       )
@@ -205,20 +155,21 @@ if __name__ == "__main__":
    )
    sim = predictive(None, generate=X.shape[0])
    # Resample the full transcriptome for each cell.
-   freqs = torch.matmul(sim["theta"], sim["phi"])
+   # This must be done manually because sampling from
+   # the multinomial is faulty when the counts are
+   # not constant.
+   freqs = torch.matmul(sim["theta"], sim["phi"]).to("cpu")
    total_counts = X.sum(dim=1)
    smpl = list()
    for i in range(X.shape[0]):
       smpl_i = list()
-      for j in range(1000):
-         multinom = torch.distributions.Multinomial(
-               total_count = int(total_counts[i]),
-               probs = freqs[j,i,:],
-               validate_args = True
-         )
-         with torch.no_grad():
-            smpl_i.append(multinom.sample([1]).cpu())
-      smpl.append(torch.cat(smpl_i))
+      multinom = torch.distributions.Multinomial(
+            total_count = int(total_counts[i]),
+            probs = freqs[:,i,:],
+            validate_args = True
+      )
+      with torch.no_grad():
+         smpl.append(multinom.sample([1]))
    tx = torch.stack(smpl).transpose(0,1)
    smpl = { "tx": tx.detach().cpu() }
 
