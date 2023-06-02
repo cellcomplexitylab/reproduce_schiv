@@ -8,8 +8,8 @@ allcells.tsv: data/exprMatrix.tsv data/sampleSheet.tsv
 
 # Plot PCA and total reads to remove "dead" cells.
 # File PC1_up_gene_ids.txt is fed to the DAVID web site.
-pca-all-cells.pdf correlates.pdf all-cells-total-reads.pdf PC1_up_gene_ids.txt: allcells.tsv
-	docker run $(SCHIV) Rscript scripts/plot-pca-all-cells.R
+pca_all_cells.pdf correlates.pdf all-cells-total-reads.pdf PC1_up_gene_ids.txt: allcells.tsv
+	docker run $(SCHIV) Rscript scripts/plot_pca_all_cells.R
 # File DAVID_PC1.txt is generated manually from the DAVID web site.
 barplot-GO-PC1.pdf: DAVID_PC1.txt
 	docker run $(SCHIV) Rscript scripts/show-GO.R $< $@
@@ -18,26 +18,11 @@ barplot-GO-PC1.pdf: DAVID_PC1.txt
 alivecells.tsv: allcells.tsv
 	docker run $(SCHIV) Rscript scripts/make-alive-cells.R
 
-# Create cell subsets.
-alivecells_DMSO_SAHA.tsv: alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "SAHA|DMSO" $@
-alivecells_DMSO_PMA.tsv: alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "PMA|DMSO" $@
+## Create cell subsets.
 alivecells_SAHA.tsv: alivecells.tsv
 	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "SAHA" $@
 alivecells_PMA.tsv: alivecells.tsv
 	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "PMA" $@
-aliveJLat.tsv: alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "J-LatA2" $@
-aliveJLat_DMSO_SAHA.tsv: alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "J-LatA2+SAHA|J-LatA2+DMSO" $@
-aliveJLat_DMSO_PMA.tsv: alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "J-LatA2+PMA|J-LatA2+DMSO" $@
-aliveJLat_SAHA.tsv: alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "J-LatA2+SAHA" $@
-aliveJLat_PMA.tsv: alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/filter_alive_cells.R "J-LatA2+PMA" $@
-
 # Remove HIV (e.g., alivecells_no_HIV.tsv).
 %_no_HIV.tsv: %.tsv
 	docker run $(SCHIV) true && awk -v OFS="\t" "NF{NF-=1};1" $< > $@
@@ -53,98 +38,88 @@ barplot-GO-SAHA.pdf: DAVID_SAHA.txt
 barplot-GO-PMA.pdf: DAVID_PMA.txt
 	docker run $(SCHIV) Rscript scripts/show-GO.R $< $@
 
-# Perform BB and LDA with 3 groups (without HIV).
-K3_LDA.pt: alivecells_no_HIV.tsv
-	docker run --gpus all $(SCHIV) python scripts/lda.py 3 $< $@
+# Perform blackbox (BB) and LDA
+K2_SAHA_LDA.pt: alivecells_SAHA.tsv
+	docker run --gpus all $(SCHIV) python scripts/lda.py 2 $< $@
+K2_PMA_LDA.pt: alivecells_PMA.tsv
+	docker run --gpus all $(SCHIV) python scripts/lda.py 2 $< $@
 K2_BB.pt: alivecells.tsv
 	docker run --gpus all $(SCHIV) python scripts/blackbox.py 2 $< $@
+# Control blackbox with multinomial a distribution.
 K2_BB_multinom.pt: alivecells.tsv
 	docker run --gpus all $(SCHIV) python scripts/blackbox_multinom.py 2 $< $@
 
-
-# Plot module simplexes.
-K3_LDA_post_theta.tsv: K3_LDA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param doc_topic_posterior
-K2_DMSO_SAHA_post_theta.tsv: K2_DMSO_SAHA.pt
+# Split vs modules A/B.
+K2_SAHA_LDA_post_theta_param.tsv: K2_SAHA_LDA.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_param
+K2_PMA_LDA_post_theta_param.tsv: K2_PMA_LDA.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_param
+K2_BB_post_theta_param.tsv: K2_BB.pt
 	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_loc
-K2_DMSO_PMA_post_theta.tsv: K2_DMSO_PMA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_loc
-K2_SAHA_post_theta.tsv: K2_SAHA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_loc
-K2_PMA_post_theta.tsv: K2_PMA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_loc
-K3_post_theta_SB.tsv: K3_SB.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_loc
-simplex_LDA.pdf: K2_post_theta_LDA.tsv alivecells_no_HIV.tsv
-	docker run $(SCHIV) Rscript scripts/plot_simplex.R $^ $@
-#simplex_BB.pdf: K2_post_theta_BB.tsv alivecells_no_HIV.tsv
-#	docker run $(SCHIV) Rscript scripts/plot_simplex.R $^ $@
-proj_BB.pdf: K2_post_theta_BB.tsv alivecells.tsv
-	docker run $(SCHIV) Rscript scripts/plot_multi_proj.R $^ $@
+K2_SAHA_LDA_theta.pdf: alivecells_SAHA.tsv K2_SAHA_LDA_post_theta_param.tsv
+	docker run $(SCHIV) Rscript scripts/plot_theta.R $^ $@ all
+K2_PMA_LDA_theta.pdf: alivecells_PMA.tsv K2_PMA_LDA_post_theta_param.tsv
+	docker run $(SCHIV) Rscript scripts/plot_theta.R $^ $@ all
+K2_SAHA_BB_theta.pdf: alivecells.tsv K2_BB_post_theta_param.tsv
+	docker run $(SCHIV) Rscript scripts/plot_theta.R $^ $@ SAHA
+K2_PMA_BB_theta.pdf: alivecells.tsv K2_BB_post_theta_param.tsv
+	docker run $(SCHIV) Rscript scripts/plot_theta.R $^ $@ PMA
 
 # Posterior check for MT-CO1 (most expressed gene).
-MTCO1_LDA.tsv: K3_LDA.pt
+MTCO1_SAHA_LDA.tsv: K2_SAHA_LDA.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ gene_sample 4633
+MTCO1_PMA_LDA.tsv: K2_PMA_LDA.pt
 	docker run $(SCHIV) python scripts/extract.py $< $@ gene_sample 4633
 MTCO1_BB.tsv: K2_BB.pt
 	docker run $(SCHIV) python scripts/extract.py $< $@ gene_sample 4633
-MTCO1_SB.tsv: K2_SB.pt
+MTCO1_BB_multinom.tsv: K2_BB_multinom.pt
 	docker run $(SCHIV) python scripts/extract.py $< $@ gene_sample 4633
-post_check_MTCO1_LDA.pdf: alivecells_no_HIV.tsv MTCO1_LDA.tsv
-	docker run $(SCHIV) Rscript scripts/plot-MTCO1.R $^ $@
-post_check_MTCO1_BB.pdf: alivecells_no_HIV.tsv MTCO1_BB.tsv
-	docker run $(SCHIV) Rscript scripts/plot-MTCO1.R $^ $@
-post_check_MTCO1_SB.pdf: alivecells.tsv MTCO1_SB.tsv
-	docker run $(SCHIV) Rscript scripts/plot-MTCO1.R $^ $@
+post_check_MTCO1_SAHA_LDA.pdf: alivecells_SAHA.tsv MTCO1_SAHA_LDA.tsv
+	docker run $(SCHIV) Rscript scripts/plot_MTCO1.R $^ $@ all
+post_check_MTCO1_PMA_LDA.pdf: alivecells_PMA.tsv MTCO1_PMA_LDA.tsv
+	docker run $(SCHIV) Rscript scripts/plot_MTCO1.R $^ $@ all
+post_check_MTCO1_SAHA_BB.pdf: alivecells.tsv MTCO1_BB.tsv
+	docker run $(SCHIV) Rscript scripts/plot_MTCO1.R $^ $@ SAHA
+post_check_MTCO1_PMA_BB.pdf: alivecells.tsv MTCO1_BB.tsv
+	docker run $(SCHIV) Rscript scripts/plot_MTCO1.R $^ $@ PMA
+post_check_MTCO1_SAHA_BB_multinom.pdf: alivecells.tsv MTCO1_BB_multinom.tsv
+	docker run $(SCHIV) Rscript scripts/plot_MTCO1.R $^ $@ SAHA
+post_check_MTCO1_PMA_BB_multinom.pdf: alivecells.tsv MTCO1_BB_multinom.tsv
+	docker run $(SCHIV) Rscript scripts/plot_MTCO1.R $^ $@ PMA
 
-# Module profiles.
-K3_LDA_post_mod.tsv: K3_LDA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param word_freqs_posterior
-K2_SB_post_mod_loc.tsv: K2_SB.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_loc
-K2_DMSO_SAHA_post_mod_loc.tsv: K2_DMSO_SAHA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_loc
-K2_DMSO_PMA_post_mod_loc.tsv: K2_DMSO_PMA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_loc
-K2_SAHA_post_mod_loc.tsv: K2_SAHA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_loc
-K2_PMA_post_mod_loc.tsv: K2_PMA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_loc
-K2_DMSO_SAHA_post_mod_scale.tsv: K2_DMSO_SAHA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_scale
-K2_DMSO_PMA_post_mod_scale.tsv: K2_DMSO_PMA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_scale
-K2_SAHA_post_mod_scale.tsv: K2_SAHA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_scale
-K2_PMA_post_mod_scale.tsv: K2_PMA.pt
-	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_scale
 
-# Angles
-SAHA_cos: K2_DMSO_SAHA_post_mod_loc.tsv K2_DMSO_SAHA_post_mod_scale.tsv K2_SAHA_post_mod_loc.tsv K2_SAHA_post_mod_scale.tsv
-	docker run $(SCHIV) Rscript scripts/compute_cos.R $^
-PMA_cos: K2_DMSO_PMA_post_mod_loc.tsv K2_DMSO_PMA_post_mod_scale.tsv K2_PMA_post_mod_loc.tsv K2_PMA_post_mod_scale.tsv
-	docker run $(SCHIV) Rscript scripts/compute_cos.R $^
+## Plot module simplexes.
+#K3_LDA_post_theta.tsv: K3_LDA.pt
+#	docker run $(SCHIV) python scripts/extract.py $< $@ param doc_topic_posterior
+#K2_post_theta_BB.tsv: K2_BB.pt
+#	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_loc
+#simplex_LDA.pdf: K2_post_theta_LDA.tsv alivecells_no_HIV.tsv
+#	docker run $(SCHIV) Rscript scripts/plot_simplex.R $^ $@
+#proj_BB.pdf: K2_post_theta_BB.tsv alivecells.tsv
+#	docker run $(SCHIV) Rscript scripts/plot_multi_proj.R $^ $@
+
+# Profiles.
+K2_BB_post_base_loc.tsv: K2_BB.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ param post_base_loc
+K2_BB_post_mod_loc.tsv: K2_BB.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_loc
 
 # Show / print module profiles.
-K3_LDA_modules: K3_LDA_post_mod.tsv
-	docker run $(SCHIV) Rscript scripts/show_modules.R $<
-K2_SAHA_modules: K2_SAHA_post_mod.tsv
-	docker run $(SCHIV) Rscript scripts/show_modules.R $<
-K2_PMA_modules: K2_PMA_post_mod.tsv
-	docker run $(SCHIV) Rscript scripts/show_modules.R $<
-K3_BB_modules: K3_BB_post_mod.tsv
-	docker run $(SCHIV) Rscript scripts/show_modules.R $<
-K2_SB_modules: K2_SB_post_mod_loc.tsv
-	docker run $(SCHIV) Rscript scripts/show_modules.R $<
+K2_BB_types: K2_BB_post_base_loc.tsv
+	docker run $(SCHIV) Rscript scripts/show_modules.R $< grouped
+K2_BB_batches: K2_BB_post_base_loc.tsv
+	docker run $(SCHIV) Rscript scripts/show_modules.R $< variance
+K2_BB_modules: K2_BB_post_mod_loc.tsv
+	docker run $(SCHIV) Rscript scripts/show_modules.R $< paired
 
+# Hello
+sm.tsv: K2_BB.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ sm
+pca_sm.pdf: sm.tsv
+	docker run $(SCHIV) Rscript scripts/plot_pca_sm.R $< $@
 
 ################################
 
-## LDA modules vs HIV.
-#topics-SAHA-vs-HIV.pdf: out-SAHA-2.txt
-#	$(DOCKER_CPU) Rscript scripts/plot-stripes.R $< $@ TRUE
-#topics-PMA-vs-HIV.pdf: out-PMA-2.txt
-#	$(DOCKER_CPU) Rscript scripts/plot-stripes.R $< $@ TRUE
-#
 ## Control LDA with scramble HIV
 #scramble-traces-PMA.txt: alivecells.tsv
 #	$(DOCKER_CPU) python scripts/LDA-2-groups-PMA-scramble.py > $@

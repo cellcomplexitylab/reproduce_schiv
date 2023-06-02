@@ -20,7 +20,7 @@ decoys.txt: GRCh38.p13.genome.fa.gz
 
 # HIVmini.fa.gz is the sequence of the miniconstruct as we know it.
 gentrome.fa.gz: gencode.v38.pc_transcripts.fa.gz HIVmini.fa.gz GRCh38.p13.genome.fa.gz
-	$(DOCKER_RUN) cat gencode.v38.pc_transcripts.fa.gz HIVmini.fa.gz GRCh38.p13.genome.fa.gz > gentrome.fa.gz
+	$(DOCKER_RUN) true && cat gencode.v38.pc_transcripts.fa.gz HIVmini.fa.gz GRCh38.p13.genome.fa.gz > gentrome.fa.gz
 
 gencode.v38+HIV.idx: gentrome.fa.gz decoys.txt
 	$(DOCKER_RUN) salmon index -p8 -t gentrome.fa.gz -d decoys.txt -i gencode.v38+HIV.idx --gencode
