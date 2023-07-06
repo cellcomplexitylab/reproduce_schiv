@@ -1,4 +1,9 @@
-cells = read.delim("alivecells.tsv")
-SAHA_cells = subset(cells, grepl("SAHA", label))
-write.table(SAHA_cells, file="SAHA_cells.tsv", sep="\t",
-   quote=FALSE, row.names=TRUE)
+# Read input data from command line.
+args = commandArgs(trailingOnly=TRUE)
+grepit = args[[1]]
+output_fname = args[[2]]
+
+cells = subset(read.delim("alivecells.tsv"),
+   grepl(grepit, group))
+write.table(cells, file=output_fname, sep="\t",
+   quote=FALSE, row.names=FALSE)

@@ -48,40 +48,48 @@ class warmup_scheduler(torch.optim.lr_scheduler.ChainedScheduler):
       super().__init__([warmup, linear_decay])
 
 
-def sc_data(fname, device="cuda", dtype=torch.float64):
+def new_sc_data(data_path, header_present = True):
    """ 
    Data for single-cell transcriptome, returns a 3-tuple with
       1. a list of cell identifiers,
-      2. a tensor of batches as integers,
-      3. a tensor of cell types as integers,
-      4. a tensor with read counts.
+      2. a tensor of cell types as integers,
+      3. a tensor of batches as integers,
+      4. a tensor of groups as integers,
+      5. a tensor with read counts.
    """
+
+   list_of_identifiers = list()
    list_of_cells = list()
-   list_of_infos = list()
+   list_of_batches = list()
+   list_of_groups = list()
    list_of_exprs = list()
-   # Parsing function.
-   parse = lambda row: (row[0], row[1], [round(float(x)) for x in row[2:]])
-   with open(fname) as f:
-      ignore_header = next(f)
+
+   # Helper function.
+   parse = lambda row: (row[0], row[1], row[2], row[3], [round(float(x)) for x in row[4:]])
+
+   with open(data_path) as f:
+      if header_present:
+         ignore_header = next(f)
       for line in f:
-         cell, info, expr = parse(line.split())
+         identifier, cell, batch, group, expr = parse(line.split())
+         list_of_identifiers.append(identifier)
          list_of_cells.append(cell)
-         list_of_infos.append(info)
+         list_of_batches.append(batch)
+         list_of_groups.append(group)
          list_of_exprs.append(torch.tensor(expr))
-   # Extract batch (plate) from cell ID.
-   list_of_plates = [re.sub(r"_.*", "", x) for x in list_of_cells]
-   unique_plates = list(set(list_of_plates))
-   list_of_batch_ids = [unique_plates.index(x) for x in list_of_plates]
-   # Extract cell type from treatment info.
-   list_of_ctypes = [re.sub(r"\+.*", "", x) for x in list_of_infos]
-   unique_ctypes = sorted(list(set(list_of_ctypes)))
-   list_of_ctype_ids = [unique_ctypes.index(x) for x in list_of_ctypes]
-   # Extract drug from treatment info.
-   list_of_drugs = [re.sub(r"[^+]*\+", "", x) for x in list_of_infos]
-   unique_drugs = sorted(list(set(list_of_drugs)))
-   list_of_drugs_ids = [unique_drugs.index(x) for x in list_of_drugs]
-   batch_tensor = torch.tensor(list_of_batch_ids).to(device)
-   ctype_tensor = torch.tensor(list_of_ctype_ids).to(device)
-   drugs_tensor = torch.tensor(list_of_drugs_ids).to(device)
-   expr_tensor = torch.stack(list_of_exprs).to(device, dtype)
-   return list_of_cells, batch_tensor, ctype_tensor, drugs_tensor, expr_tensor
+
+   unique_cells = sorted(list(set(list_of_cells)))
+   list_of_cells_ids = [unique_cells.index(x) for x in list_of_cells]
+   unique_batches = sorted(list(set(list_of_batches)))
+   list_of_batches_ids = [unique_batches.index(x) for x in list_of_batches]
+   
+   unique_groups = sorted(list(set(list_of_groups)))
+   list_of_groups_ids = [unique_groups.index(x) for x in list_of_groups]
+
+   ctype_tensor = torch.tensor(list_of_cells_ids)
+   batches_tensor = torch.tensor(list_of_batches_ids)
+   groups_tensor = torch.tensor(list_of_groups_ids)
+   expr_tensor = torch.stack(list_of_exprs)
+
+   return list_of_identifiers, ctype_tensor, batches_tensor, groups_tensor, expr_tensor
+

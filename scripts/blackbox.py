@@ -35,13 +35,6 @@ def model(data, generate=False):
    dtype = torch.float64 if X is None else X.dtype
    ncells = X.shape[0] if X is not None else generate.shape[0]
 
-   # dim(OH_B): ncells x B
-   OH_B = F.one_hot(batch.to(torch.int64)).to(device, dtype)
-   # dim(OH_N): ncells x N
-   OH_N = F.one_hot(ctype.to(torch.int64)).to(device, dtype)
-   # dim(OH_D): ncells x D
-   OH_D = F.one_hot(drugs.to(torch.int64)).to(device, dtype)
-
    # Variance-to-mean ratio. Variance is modelled as
    # 's * u', where 'u' is mean gene expression and
    # 's' is a positive number with 90% chance of being
@@ -148,7 +141,8 @@ def model(data, generate=False):
          #    -------  D blocks  --------
 
          # Intermediate to construct the covariance matrix.
-         K_block = (.99 * torch.ones(K,K)).fill_diagonal_(1.)
+         K_block = (.99 * torch.ones(K,K))
+         K_block.fill_diagonal_(1.)
 
          cor_KD = torch.block_diag(*([K_block]*D)).to(device, dtype)
          mu_KD = torch.zeros(1,1,K*D).to(device, dtype)
@@ -188,7 +182,8 @@ def model(data, generate=False):
          #   -----------  N blocks  -----------
 
          # Intermediate to construct the covariance matrix.
-         B_block = (.02 * torch.ones(B,B)).fill_diagonal_(.03)
+         B_block = (.02 * torch.ones(B,B))
+         B_block.fill_diagonal_(.03)
 
          cor_NB = .97 + torch.block_diag(*([B_block]*N)).to(device, dtype)
          mu_NB = torch.ones(1,1,N*B).to(device, dtype)
@@ -207,21 +202,16 @@ def model(data, generate=False):
 
       # Attribute modules and baseline to each cell. A cell has
       # exactly one treatment (drug), one batch and one cell type
-      # so the 'einsum' functions below just select the term that
-      # was sampled above. All the transcriptional modules for a
-      # given treatment are present in a cell, with breakdown
-      # 'theta', so in this case 'einsum' computes the weighted
-      # average of the terms sampled above.
+      # but all the transcriptional modules for a given treatment
+      # are present with breakdown 'theta' in a cell, so here the
+      # 'einsum' computes the weighted average of the terms
+      # sampled above.
 
       # dim(mod_n): ncells x G
-      nprll = len(mod.shape) == 4 # (not run in parallel)
-      mod_n = torch.einsum("ni,ygik,xnk->ng", OH_D, mod, theta) if nprll else \
-              torch.einsum("ni,...ygik,...xnk->...ng", OH_D, mod, theta)
+      mod_n = torch.einsum("...ni,...gni->ng", theta, mod[...,drugs,:])
 
       # dim(base_n): ncells x G
-      nprll = len(base.shape) == 4 # (not run in parallel)
-      base_n = torch.einsum("ni,xgij,nj->ng", OH_N, base, OH_B) if nprll else \
-               torch.einsum("ni,...xgij,nj->...ng", OH_N, base, OH_B)
+      base_n = base[...,ctype,batch].squeeze().transpose(-2,-1)
 
       # dim(u): ncells x G
       u = torch.exp(base_n + mod_n + shift)
@@ -254,7 +244,7 @@ def model(data, generate=False):
          # Observations are sampled from a ZINB distribution.
          Y = pyro.sample(
                name = "Y",
-               # dim(X): ncells x G
+               # dim(Y): ncells x G
                fn = ZeroInflatedNegativeBinomial(
                   total_count = r, # dim: ncells x G
                   probs = p,       # dim:          1
@@ -265,7 +255,7 @@ def model(data, generate=False):
          )
 
    # Return sampled transcriptome and "smoothed" log-estimate.
-   return torch.stack((Y, mod_n))
+   return Y
 
 
 def guide(data=None, generate=False):
@@ -425,9 +415,14 @@ if __name__ == "__main__":
 
 
    # Read in the data.
-   data = sc_data(in_fname, device=device)
+   data = sc_data(in_fname)
 
-   cells, batches, ctypes, drugs, X = data
+   ids, ctypes, batches, groups, X = data
+   ctypes = ctypes.to(device)
+   batches = batches.to(device)
+   groups = groups.to(device)
+   X = X.to(device, torch.float64)
+
    mask = torch.ones_like(X).to(dtype=torch.bool)
    # HSPA8 and MT-ND4 show the strongest batch
    # effects when considering SAHA and PMA
@@ -444,10 +439,10 @@ if __name__ == "__main__":
    # Set the dimensions.
    B = int(batches.max() + 1)
    N = int(ctypes.max() + 1)
-   D = int(drugs.max() + 1)
+   D = int(groups.max() + 1)
    G = int(X.shape[-1])
 
-   data = batches, ctypes, drugs, X, mask
+   data = batches, ctypes, groups, X, mask
 
    # Use a warmup/decay learning-rate scheduler.
    scheduler = pyro.optim.PyroLRScheduler(
@@ -498,7 +493,7 @@ if __name__ == "__main__":
          model = model,
          guide = guide,
          num_samples = NUM_SAMPLES,
-         return_sites = ("theta", "mod", "base", "_RETURN"),
+         return_sites = ("_RETURN",),
    )
    with torch.no_grad():
       # Resample transcriptome (and "smoothed" estimates as well).

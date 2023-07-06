@@ -49,7 +49,7 @@ K2_BB.pt: alivecells.tsv
 K2_BB_multinom.pt: alivecells.tsv
 	docker run --gpus all $(SCHIV) python scripts/blackbox_multinom.py 2 $< $@
 
-# Split vs modules A/B.
+# Breakdown of modules A/B.
 K2_SAHA_LDA_post_theta_param.tsv: K2_SAHA_LDA.pt
 	docker run $(SCHIV) python scripts/extract.py $< $@ param post_theta_param
 K2_PMA_LDA_post_theta_param.tsv: K2_PMA_LDA.pt
@@ -99,12 +99,18 @@ post_check_MTCO1_PMA_BB_multinom.pdf: alivecells.tsv MTCO1_BB_multinom.tsv
 #	docker run $(SCHIV) Rscript scripts/plot_multi_proj.R $^ $@
 
 # Profiles.
+K2_SAHA_LDA_post_phi_param.tsv: K2_SAHA_LDA.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ param post_phi_param
+K2_PMA_LDA_post_phi_param.tsv: K2_PMA_LDA.pt
+	docker run $(SCHIV) python scripts/extract.py $< $@ param post_phi_param
 K2_BB_post_base_loc.tsv: K2_BB.pt
 	docker run $(SCHIV) python scripts/extract.py $< $@ param post_base_loc
 K2_BB_post_mod_loc.tsv: K2_BB.pt
 	docker run $(SCHIV) python scripts/extract.py $< $@ param post_mod_loc
 
 # Show / print module profiles.
+K2_SAHA_LDA: K2_SAHA_LDA_post_phi_param.tsv
+	docker run $(SCHIV) Rscript scripts/show_modules.R $< paired
 K2_BB_types: K2_BB_post_base_loc.tsv
 	docker run $(SCHIV) Rscript scripts/show_modules.R $< grouped
 K2_BB_batches: K2_BB_post_base_loc.tsv
